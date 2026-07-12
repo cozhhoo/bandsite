@@ -194,6 +194,23 @@ Resources:`;for(let t of c){if(!t||typeof t!=`string`)throw Error(`@supabase/aut
   .friend-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(110px,1fr));gap:10px;margin-top:6px;}
   .friend-card{background:#fff;border:1px solid var(--line);border-radius:12px;padding:12px;text-align:center;cursor:pointer;transition:.12s;}
   .friend-card:hover{border-color:var(--leaf);}
+  .role-grid{display:grid;grid-template-columns:1fr 1fr;gap:14px;margin-top:20px;}
+  .role-btn{background:#fff;border:1px solid var(--line);border-radius:16px;padding:24px 14px;text-align:center;cursor:pointer;transition:.15s;font-family:inherit;}
+  .role-btn:hover{border-color:var(--leaf);transform:translateY(-2px);}
+  .role-icon{font-size:34px;margin-bottom:8px;}
+  .role-label{font-family:'Noto Serif SC',serif;font-weight:700;font-size:16px;}
+  .role-sub{font-size:11.5px;color:var(--ink-soft);margin-top:2px;}
+  .main-tab-locked{cursor:default!important;}
+  .main-tab-locked:hover{border-color:var(--line)!important;color:var(--ink-soft)!important;}
+  .main-tab-locked.active:hover{color:#fff!important;border-color:var(--leaf)!important;}
+  .chat-card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-top:20px;}
+  .chat-thread{max-height:280px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding:6px 2px;}
+  .chat-bubble-row{display:flex;}
+  .chat-bubble-row.mine{justify-content:flex-end;}
+  .chat-bubble{background:#fff;border:1px solid var(--line);border-radius:12px;padding:8px 12px;font-size:13.5px;max-width:75%;line-height:1.5;word-break:break-word;}
+  .chat-bubble-row.mine .chat-bubble{background:var(--leaf);color:#fff;border-color:var(--leaf);}
+  .chat-input-row{display:flex;gap:8px;margin-top:10px;}
+  .chat-input-row input{flex:1;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-family:inherit;font-size:13.5px;background:#fff;color:var(--ink);}
 </style>
 </head>
 <body>
@@ -246,17 +263,43 @@ let state = {
   meetings: [],
   posts: [],
   profiles: {},
+  guests: [],             // 游客账号：[{name, joinedAt}]
+  credentials: {},        // 每个身份的密码，key 是 identity 值（数字或 'guest:名字'）
+  messages: [],           // 私聊消息：[{id, from, to, text, ts}]
   activeMonth: 0,
   activeTab: null,        // null = 首页, 'schedule' | 'memories' | 'profile'
   scheduleSub: 'checkin', // 'checkin' | 'meeting'
-  viewingFriend: null,    // 个人页里正在查看的好友下标
+  viewingFriend: null,    // 个人页里正在查看的好友 id（数字=音乐家下标，'guest:名字'=游客）
   identity: undefined
 };
 
 const ADMIN_NAME = '严格上帝';
 const SCHEDULER_NAME = '小鱼';
+const DEFAULT_PASSWORD = 'pgdpg402';
 function isAdmin(){ return !!(state.members && state.members[state.identity] && state.members[state.identity].name === ADMIN_NAME); }
 function canManageMeetings(){ return !!(state.members && state.members[state.identity] && state.members[state.identity].name === SCHEDULER_NAME); }
+
+/* ---------------- 身份 / 游客 通用工具 ---------------- */
+function isGuestIdentity(id){ return typeof id==='string' && id.indexOf('guest:')===0; }
+function guestNameOf(id){ return id.slice(6); }
+function getGuest(name){ return (state.guests||[]).find(g=>g.name===name); }
+function getPersonById(id){
+  if(isGuestIdentity(id)){
+    const g = getGuest(guestNameOf(id));
+    return { name: (g && g.name) || guestNameOf(id), instrument:'游客', isGuest:true };
+  }
+  return (state.members && state.members[id]) || {name:'未知', instrument:''};
+}
+function currentPassword(id){
+  if(state.credentials && state.credentials[id] !== undefined && state.credentials[id] !== null) return state.credentials[id];
+  return isGuestIdentity(id) ? null : DEFAULT_PASSWORD;
+}
+function allPeople(){
+  const arr = (state.members||[]).map((m,i)=>({id:i, name:m.name, instrument:m.instrument, isGuest:false}));
+  (state.guests||[]).forEach(g=> arr.push({id:'guest:'+g.name, name:g.name, instrument:'游客', isGuest:true}));
+  return arr;
+}
+function convKey(a,b){ return [String(a),String(b)].sort().join('__'); }
 
 function escapeHtml(s){
   return (s==null? '' : String(s)).replace(/[&<>"']/g, c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
@@ -337,7 +380,7 @@ async function loadAll(){
     return;
   }
   if(!data){
-    data = { members: PRESET_MEMBERS, checkins: {}, meetings: [], posts: [], profiles: {} };
+    data = { members: PRESET_MEMBERS, checkins: {}, meetings: [], posts: [], profiles: {}, guests: [], credentials: {}, messages: [] };
     try{ await remoteSet(data); }
     catch(e2){
       renderErrorScreen('初始化云端数据失败：' + e2.message);
@@ -349,6 +392,9 @@ async function loadAll(){
   state.meetings = data.meetings || [];
   state.posts = data.posts || [];
   state.profiles = data.profiles || {};
+  state.guests = data.guests || [];
+  state.credentials = data.credentials || {};
+  state.messages = data.messages || [];
   state.identity = loadIdentity();
   renderRoot();
 }
@@ -362,6 +408,9 @@ async function pullLatest(){
       state.meetings = data.meetings || [];
       state.posts = data.posts || [];
       state.profiles = data.profiles || {};
+      state.guests = data.guests || [];
+      state.credentials = data.credentials || {};
+      state.messages = data.messages || [];
     }
   }catch(e){ /* 拉取失败就先用本地已有数据 */ }
 }
@@ -373,7 +422,10 @@ async function saveAll(){
       checkins: state.checkins,
       meetings: state.meetings,
       posts: state.posts,
-      profiles: state.profiles
+      profiles: state.profiles,
+      guests: state.guests,
+      credentials: state.credentials,
+      messages: state.messages
     });
   }catch(e){
     alert('保存失败：' + e.message + '\n请检查网络，或稍后重试一次。');
@@ -396,16 +448,37 @@ function renderRoot(){
   else{ render(); }
 }
 
-/* ---------------- IDENTITY SCREEN ---------------- */
-function renderIdentityScreen(){
+/* ---------------- IDENTITY SCREEN（音乐家 / 游客 两级登录 + 密码）---------------- */
+function renderIdentityScreen(){ renderRoleChoice(); }
+
+function renderRoleChoice(){
   const app = document.getElementById('app');
   app.innerHTML = `
     <div class="setup-card">
       <div class="eyebrow">皮菇文化有限公司 · 团队小站</div>
+      <h1 style="font-family:'Noto Serif SC',serif;font-weight:900;margin:0 0 10px;">请问你是谁？</h1>
+      <p class="sub">乐队六位成员请选"音乐家"；如果你是被邀请来玩的朋友，选"游客"。</p>
+      <div class="role-grid" id="roleGrid">
+        <button class="role-btn" data-role="musician"><div class="role-icon">🎸</div><div class="role-label">音乐家</div><div class="role-sub">乐队六位成员</div></button>
+        <button class="role-btn" data-role="visitor"><div class="role-icon">🙋</div><div class="role-label">游客</div><div class="role-sub">朋友 · 观众</div></button>
+      </div>
+    </div>`;
+  app.querySelectorAll('.role-btn').forEach(b=>{
+    b.onclick = ()=>{ b.dataset.role==='musician' ? renderMusicianGrid() : renderVisitorChoice(); };
+  });
+}
+
+function renderMusicianGrid(){
+  const app = document.getElementById('app');
+  app.innerHTML = `
+    <div class="setup-card">
+      <button class="back-link" id="backToRole">← 返回</button>
+      <div class="eyebrow">音乐家登录</div>
       <h1 style="font-family:'Noto Serif SC',serif;font-weight:900;margin:0 0 10px;">你是哪一位？</h1>
-      <p class="sub">先选自己的身份，之后打开这个网页会记住你是谁。这个选择只保存在这台设备的浏览器里。</p>
+      <p class="sub">选自己的名字，然后输入密码登录。</p>
       <div class="id-grid" id="idGrid"></div>
     </div>`;
+  document.getElementById('backToRole').onclick = renderRoleChoice;
   const grid = document.getElementById('idGrid');
   state.members.forEach((mem,i)=>{
     const b = document.createElement('button');
@@ -413,15 +486,82 @@ function renderIdentityScreen(){
     b.style.setProperty('--mc', MEMBER_COLORS[i]);
     const tag = mem.name===ADMIN_NAME ? '（管理员）' : '';
     b.innerHTML = `<span class="id-dot" style="background:${MEMBER_COLORS[i]}"></span><span class="id-text"><b>${mem.name}${tag}</b><small>${mem.instrument}</small></span>`;
-    b.onclick = ()=>{ saveIdentity(i); renderRoot(); };
+    b.onclick = ()=> renderPasswordPrompt(i, mem.name, renderMusicianGrid);
     grid.appendChild(b);
   });
+}
+
+function renderVisitorChoice(){
+  const app = document.getElementById('app');
+  const guests = state.guests || [];
+  app.innerHTML = `
+    <div class="setup-card">
+      <button class="back-link" id="backToRole">← 返回</button>
+      <div class="eyebrow">游客</div>
+      <h1 style="font-family:'Noto Serif SC',serif;font-weight:900;margin:0 0 10px;">登录或创建游客账号</h1>
+      <p class="sub">已经创建过账号就选自己的名字登录；没有的话在下面创建一个新账号，可以创建很多个。</p>
+      <div class="id-grid" id="guestGrid"></div>
+      <div class="section-head" style="margin-top:22px;"><h2>创建新游客账号</h2></div>
+      <div class="cfg-field"><label>昵称</label><input id="newGuestName" placeholder="给自己起个名字"></div>
+      <div class="cfg-field"><label>设置密码</label><input id="newGuestPwd" type="password" placeholder="至少4位"></div>
+      <div class="cfg-field"><label>确认密码</label><input id="newGuestPwd2" type="password" placeholder="再输一遍"></div>
+      <button class="btn btn-primary" style="width:100%;margin-top:14px;" id="createGuestBtn">创建并登录</button>
+    </div>`;
+  document.getElementById('backToRole').onclick = renderRoleChoice;
+  const grid = document.getElementById('guestGrid');
+  if(guests.length===0){ grid.innerHTML = `<div class="empty-hint" style="grid-column:1/-1;">还没有游客账号，在下面创建第一个吧</div>`; }
+  guests.forEach(g=>{
+    const b = document.createElement('button');
+    b.className = 'id-btn';
+    b.innerHTML = `<span class="id-dot" style="background:var(--amber)"></span><span class="id-text"><b>${escapeHtml(g.name)}</b><small>游客</small></span>`;
+    b.onclick = ()=> renderPasswordPrompt('guest:'+g.name, g.name, renderVisitorChoice);
+    grid.appendChild(b);
+  });
+  document.getElementById('createGuestBtn').onclick = async ()=>{
+    const name = document.getElementById('newGuestName').value.trim();
+    const pwd = document.getElementById('newGuestPwd').value;
+    const pwd2 = document.getElementById('newGuestPwd2').value;
+    if(!name){ alert('起个名字吧'); return; }
+    if(state.members.some(m=>m.name===name) || (state.guests||[]).some(g=>g.name===name)){ alert('这个名字已经被用过了，换一个吧'); return; }
+    if(pwd.length<4){ alert('密码至少4位'); return; }
+    if(pwd!==pwd2){ alert('两次密码不一致'); return; }
+    state.guests = state.guests || [];
+    state.guests.push({ name, joinedAt: Date.now() });
+    state.credentials = state.credentials || {};
+    state.credentials['guest:'+name] = pwd;
+    await saveAll();
+    saveIdentity('guest:'+name);
+    renderRoot();
+  };
+}
+
+function renderPasswordPrompt(id, displayName, onBack){
+  const app = document.getElementById('app');
+  app.innerHTML = `
+    <div class="setup-card">
+      <button class="back-link" id="backBtn">← 返回</button>
+      <div class="eyebrow">输入密码</div>
+      <h1 style="font-family:'Noto Serif SC',serif;font-weight:900;margin:0 0 10px;">你好，${escapeHtml(displayName)}</h1>
+      <p class="sub">${isGuestIdentity(id)? '输入你创建账号时设置的密码。' : `第一次登录默认密码是 <code>${DEFAULT_PASSWORD}</code>，登录后可以在"个人"页面自行修改并记住新密码。`}</p>
+      <div class="cfg-field"><label>密码</label><input type="password" id="pwdInput" placeholder="输入密码"></div>
+      <div id="pwdError" style="color:var(--danger);font-size:12.5px;margin-top:6px;display:none;">密码不对，再试试</div>
+      <button class="btn btn-primary" style="width:100%;margin-top:14px;" id="pwdOk">登录</button>
+    </div>`;
+  document.getElementById('backBtn').onclick = onBack;
+  const tryLogin = ()=>{
+    const val = document.getElementById('pwdInput').value;
+    if(val === currentPassword(id)){ saveIdentity(id); renderRoot(); }
+    else{ document.getElementById('pwdError').style.display = 'block'; }
+  };
+  document.getElementById('pwdOk').onclick = tryLogin;
+  document.getElementById('pwdInput').addEventListener('keydown', ev=>{ if(ev.key==='Enter') tryLogin(); });
+  document.getElementById('pwdInput').focus();
 }
 
 /* ---------------- MAIN APP SHELL ---------------- */
 function render(){
   const app = document.getElementById('app');
-  const me = state.members[state.identity];
+  const me = getPersonById(state.identity);
   app.innerHTML = `
     <header>
       <div class="eyebrow">皮菇文化有限公司 · 团队小站</div>
@@ -429,7 +569,7 @@ function render(){
       <p class="sub">数据存在你们自己的云端存储里，跟 Claude 无关。</p>
     </header>
     <div id="mainBody"></div>
-    <footer>数据对六位成员共享可见 · <button class="footer-link" id="switchId">不是你？切换身份</button></footer>
+    <footer>数据对所有登录的人共享可见 · <button class="footer-link" id="switchId">不是你？切换身份</button></footer>
   `;
   document.getElementById('switchId').onclick = ()=>{ saveIdentity(null); renderRoot(); };
   renderMainBody();
@@ -464,12 +604,10 @@ function renderHome(target){
 function renderMainTabs(){
   const wrap = document.getElementById('mainTabs');
   const tabs = [ ['schedule','日程'], ['memories','回忆'], ['profile','个人'] ];
+  // 三个标签只作为"当前位置"提示，不能直接点击互相切换——要切换必须先返回首页
   wrap.innerHTML = tabs.map(([key,label])=>
-    `<button class="tab-btn main-tab ${state.activeTab===key?'active':''}" data-tab="${key}">${label}</button>`
+    `<span class="tab-btn main-tab-locked ${state.activeTab===key?'active':''}">${label}</span>`
   ).join('') + `<div class="spacer"></div><button class="icon-btn" id="refreshBtn">↻ 刷新最新数据</button>`;
-  wrap.querySelectorAll('.main-tab').forEach(b=>{
-    b.onclick = ()=>{ state.activeTab = b.dataset.tab; state.viewingFriend=null; renderMainTabs(); renderActiveTab(); };
-  });
   document.getElementById('refreshBtn').onclick = async ()=>{
     await pullLatest();
     renderActiveTab();
@@ -583,11 +721,11 @@ function renderMeetingListForMonth(){
   const list = document.getElementById('meetingList');
   const {y,m} = MONTHS[state.activeMonth];
   const prefix = `${y}-${pad(m+1)}`;
-  const meetings = (state.meetings||[]).filter(mt=>mt.date.startsWith(prefix)).sort((a,b)=>a.date.localeCompare(b.date));
+  const meetings = (state.meetings||[]).filter(mt=>mt.date.startsWith(prefix)).sort((a,b)=>(a.date+(a.time||'')).localeCompare(b.date+(b.time||'')));
   if(meetings.length===0){ list.innerHTML = `<div class="empty-hint">这个月还没有安排会议</div>`; return; }
   list.innerHTML = meetings.map(mt=>`
     <div class="meeting-card">
-      <div class="meeting-date">${mt.date.slice(5)}</div>
+      <div class="meeting-date">${mt.date.slice(5)}${mt.time? '<br>'+mt.time : ''}</div>
       <div class="meeting-body">
         <div class="meeting-title">${escapeHtml(mt.title)}</div>
         ${mt.summary? `<div class="meeting-summary">${escapeHtml(mt.summary)}</div>` : ''}
@@ -616,7 +754,7 @@ function openMeetingDayPanel(key){
     html += dayMeetings.map(mt=>`
       <div class="meeting-card">
         <div class="meeting-body">
-          <div class="meeting-title">${escapeHtml(mt.title)}</div>
+          <div class="meeting-title">${mt.time? `<span style="color:var(--leaf);">${mt.time}</span> · `:''}${escapeHtml(mt.title)}</div>
           ${mt.summary? `<div class="meeting-summary">${escapeHtml(mt.summary)}</div>` : ''}
         </div>
         ${canManageMeetings()? `<button class="icon-btn meeting-del-inline" data-id="${mt.id}">删除</button>` : ''}
@@ -648,6 +786,7 @@ function openMeetingForm(presetDate){
   panel.innerHTML = `
     <h2>添加线上会议</h2>
     <div class="cfg-field"><label>日期</label><input type="date" id="mtDate" value="${presetDate||''}"></div>
+    <div class="cfg-field"><label>时间</label><input type="time" id="mtTime" value="19:30"></div>
     <div class="cfg-field"><label>会议名称</label><input id="mtTitle" placeholder="例如：暑期第三次排练总结会"></div>
     <div class="cfg-field"><label>会议概要（选填）</label><input id="mtSummary" placeholder="简单写几句这次会议聊了什么"></div>
     <div class="panel-actions"><button class="btn btn-ghost" id="cancelBtn">取消</button><button class="btn btn-primary" id="saveMtBtn">保存</button></div>
@@ -656,11 +795,12 @@ function openMeetingForm(presetDate){
   document.getElementById('cancelBtn').onclick = closePanel;
   document.getElementById('saveMtBtn').onclick = async ()=>{
     const date = document.getElementById('mtDate').value;
+    const time = document.getElementById('mtTime').value;
     const title = document.getElementById('mtTitle').value.trim();
     const summary = document.getElementById('mtSummary').value.trim();
     if(!date || !title){ alert('日期和会议名称不能为空'); return; }
     state.meetings = state.meetings || [];
-    state.meetings.push({ id: 'mt_'+Date.now(), date, title, summary });
+    state.meetings.push({ id: 'mt_'+Date.now(), date, time, title, summary });
     await saveAll();
     closePanel();
     renderMeetingCalendar(); renderMeetingListForMonth();
@@ -671,6 +811,12 @@ function openMeetingForm(presetDate){
 function renderQuickArea(){
   const area = document.getElementById('quickArea');
   const i = state.identity;
+  if(isGuestIdentity(i)){
+    area.innerHTML = `<div class="quick-card rest"><div class="quick-info">
+      <div class="quick-label">游客模式</div><div class="quick-name">你可以查看大家的打卡情况，但不能代替他们打卡 👀</div>
+    </div></div>`;
+    return;
+  }
   const mem = state.members[i];
   const y=TODAY.getFullYear(), m=TODAY.getMonth(), d=TODAY.getDate();
   const key = dateKey(y,m,d);
@@ -769,6 +915,26 @@ function openDayPanel(key){
   const [y,m,d] = key.split('-').map(Number);
   const weekdayLabel = DOW[(new Date(y,m-1,d).getDay()+6)%7];
   const i = state.identity;
+
+  if(isGuestIdentity(i)){
+    let gHtml = `<h2>${y}年${m}月${d}日</h2><div class="sub">周${weekdayLabel} · 游客查看（不可编辑）</div>`;
+    state.members.forEach((m2,idx)=>{
+      const e2 = entries[idx];
+      gHtml += `<div class="member-row">
+        <div class="check-circle ${e2.checked?'on':''}" style="${e2.checked?'background:'+MEMBER_COLORS[idx]+';':''}cursor:default;">${e2.checked?'✓':''}</div>
+        <div class="member-info">
+          <div class="member-name">${m2.name}</div>
+          <div class="member-inst">${m2.instrument}${e2.note? ' · '+e2.note : ''}</div>
+        </div>
+      </div>`;
+    });
+    gHtml += `<div class="panel-actions"><button class="btn btn-primary" id="cancelBtn" style="flex:1;">关闭</button></div>`;
+    panel.innerHTML = gHtml;
+    overlay.classList.add('show');
+    document.getElementById('cancelBtn').onclick = closePanel;
+    return;
+  }
+
   const mem = state.members[i];
   const e = entries[i];
   let html = `<h2>${y}年${m}月${d}日</h2><div class="sub">周${weekdayLabel} · 工作日打卡</div>`;
@@ -993,8 +1159,8 @@ function renderPostList(){
 }
 
 function renderPostCard(p){
-  const author = state.members[p.authorIdx] || {name:'未知',instrument:''};
-  const canDel = (p.authorIdx===state.identity) || isAdmin();
+  const author = getPersonById(p.authorIdx);
+  const canDel = (String(p.authorIdx)===String(state.identity)) || isAdmin();
   const liked = (p.likes||[]).includes(state.identity);
   const avatar = (state.profiles[p.authorIdx]||{}).avatar;
   let shareHtml = '';
@@ -1018,7 +1184,7 @@ function renderPostCard(p){
       ${canDel? `<button class="post-del" data-id="${p.id}">删除</button>` : ''}
     </div>
     <div class="comments">
-      ${(p.comments||[]).map(c=>`<div class="comment-row"><b>${escapeHtml((state.members[c.authorIdx]||{}).name||'')}：</b>${escapeHtml(c.text)}</div>`).join('')}
+      ${(p.comments||[]).map(c=>`<div class="comment-row"><b>${escapeHtml(getPersonById(c.authorIdx).name||'')}：</b>${escapeHtml(c.text)}</div>`).join('')}
       <div class="comment-input">
         <input type="text" placeholder="写条评论…" data-id="${p.id}">
         <button class="icon-btn comment-add" data-id="${p.id}">发送</button>
@@ -1034,9 +1200,10 @@ function renderProfileTab(target){
     return;
   }
   const i = state.identity;
-  const mem = state.members[i];
+  const mem = getPersonById(i);
+  const guestSelf = isGuestIdentity(i);
   const prof = state.profiles[i] || {};
-  const total = totalCheckinCount(i);
+  const total = guestSelf ? null : totalCheckinCount(i);
   target.innerHTML = `
     <div class="profile-card">
       <div class="profile-top">
@@ -1066,14 +1233,36 @@ function renderProfileTab(target){
           </div>
         </div>
       </div>
-      <div class="profile-stat">累计打卡 <b>${total}</b> 次</div>
+      ${guestSelf? '' : `<div class="profile-stat">累计打卡 <b>${total}</b> 次</div>`}
       <div class="panel-actions" style="margin-top:16px;"><button class="btn btn-primary" id="saveProfileBtn" style="flex:1;">保存资料</button></div>
+    </div>
+    <div class="profile-card">
+      <div class="section-head"><h2>修改密码</h2></div>
+      <div class="cfg-field"><label>当前密码</label><input type="password" id="curPwd" placeholder="${isGuestIdentity(i)?'':'首次登录默认是 '+DEFAULT_PASSWORD}"></div>
+      <div class="cfg-field"><label>新密码</label><input type="password" id="newPwd" placeholder="至少4位"></div>
+      <div class="cfg-field"><label>确认新密码</label><input type="password" id="newPwd2" placeholder="再输一遍"></div>
+      <div class="panel-actions" style="margin-top:14px;"><button class="btn btn-primary" id="changePwdBtn" style="flex:1;">修改密码</button></div>
     </div>
     <div>
       <div class="section-head"><h2>好友</h2></div>
       <div class="friend-grid" id="friendGrid"></div>
     </div>
   `;
+  document.getElementById('changePwdBtn').onclick = async ()=>{
+    const cur = document.getElementById('curPwd').value;
+    const np = document.getElementById('newPwd').value;
+    const np2 = document.getElementById('newPwd2').value;
+    if(cur !== currentPassword(i)){ alert('当前密码不对'); return; }
+    if(np.length<4){ alert('新密码至少4位'); return; }
+    if(np!==np2){ alert('两次新密码不一致'); return; }
+    state.credentials = state.credentials || {};
+    state.credentials[i] = np;
+    await saveAll();
+    alert('密码已修改，记得记住新密码');
+    document.getElementById('curPwd').value = '';
+    document.getElementById('newPwd').value = '';
+    document.getElementById('newPwd2').value = '';
+  };
   let selectedGender = prof.gender || '';
   target.querySelectorAll('.gender-btn').forEach(b=>{
     b.onclick = ()=>{
@@ -1103,21 +1292,22 @@ function renderProfileTab(target){
     renderProfileTab(target);
   };
   const grid = document.getElementById('friendGrid');
-  state.members.forEach((m2,idx)=>{
-    if(idx===i) return;
-    const p2 = state.profiles[idx] || {};
+  allPeople().forEach(p2person=>{
+    if(String(p2person.id)===String(i)) return;
+    const p2 = state.profiles[p2person.id] || {};
     const card = document.createElement('div');
     card.className = 'friend-card';
-    card.innerHTML = `<div class="avatar-big" style="width:52px;height:52px;font-size:18px;margin:0 auto 8px;">${p2.avatar? `<img src="${p2.avatar}">` : (m2.name[0]||'')}</div><div style="font-weight:700;font-size:13px;">${m2.name}</div><div style="font-size:11px;color:var(--ink-soft);">${m2.instrument}</div>`;
-    card.onclick = ()=>{ state.viewingFriend = idx; renderActiveTab(); };
+    card.innerHTML = `<div class="avatar-big" style="width:52px;height:52px;font-size:18px;margin:0 auto 8px;">${p2.avatar? `<img src="${p2.avatar}">` : (p2person.name[0]||'')}</div><div style="font-weight:700;font-size:13px;">${p2person.name}</div><div style="font-size:11px;color:var(--ink-soft);">${p2person.instrument}</div>`;
+    card.onclick = ()=>{ state.viewingFriend = p2person.id; renderActiveTab(); };
     grid.appendChild(card);
   });
 }
 
 function renderFriendProfile(target, idx){
-  const mem = state.members[idx];
+  const mem = getPersonById(idx);
   const prof = state.profiles[idx] || {};
-  const total = totalCheckinCount(idx);
+  const isGuestFriend = isGuestIdentity(idx);
+  const total = isGuestFriend ? null : totalCheckinCount(idx);
   target.innerHTML = `
     <button class="back-link" id="backToMe">← 返回我的资料</button>
     <div class="profile-card">
@@ -1133,10 +1323,47 @@ function renderFriendProfile(target, idx){
         <div class="field-block"><label>血型</label><div>${prof.bloodType? prof.bloodType+'型' : '未填写'}</div></div>
         <div class="field-block" style="grid-column:1/-1;"><label>性别</label><div>${prof.gender || '未填写'}</div></div>
       </div>
-      <div class="profile-stat">累计打卡 <b>${total}</b> 次</div>
+      ${isGuestFriend? '' : `<div class="profile-stat">累计打卡 <b>${total}</b> 次</div>`}
+    </div>
+    <div class="chat-card">
+      <div class="section-head"><h2>和 ${escapeHtml(mem.name)} 聊天</h2></div>
+      <div class="chat-thread" id="chatThread"></div>
+      <div class="chat-input-row">
+        <input type="text" id="chatInput" placeholder="说点什么…">
+        <button class="btn btn-primary" id="chatSend" style="width:auto;padding:8px 16px;">发送</button>
+      </div>
     </div>
   `;
   document.getElementById('backToMe').onclick = ()=>{ state.viewingFriend = null; renderActiveTab(); };
+  renderChatThread(idx);
+  const sendMsg = async ()=>{
+    const input = document.getElementById('chatInput');
+    const text = input.value.trim();
+    if(!text) return;
+    state.messages = state.messages || [];
+    state.messages.push({ id:'msg_'+Date.now(), from: state.identity, to: idx, text, ts: Date.now() });
+    input.value = '';
+    await saveAll();
+    renderChatThread(idx);
+  };
+  document.getElementById('chatSend').onclick = sendMsg;
+  document.getElementById('chatInput').addEventListener('keydown', ev=>{ if(ev.key==='Enter') sendMsg(); });
+}
+
+function renderChatThread(otherId){
+  const box = document.getElementById('chatThread');
+  if(!box) return;
+  const key = convKey(state.identity, otherId);
+  const msgs = (state.messages||[]).filter(m=> convKey(m.from,m.to)===key).sort((a,b)=>a.ts-b.ts);
+  if(msgs.length===0){
+    box.innerHTML = `<div class="empty-hint">还没有聊天记录，打个招呼吧</div>`;
+  }else{
+    box.innerHTML = msgs.map(m=>{
+      const mine = String(m.from)===String(state.identity);
+      return `<div class="chat-bubble-row ${mine?'mine':''}"><div class="chat-bubble">${escapeHtml(m.text)}</div></div>`;
+    }).join('');
+  }
+  box.scrollTop = box.scrollHeight;
 }
 
 
