@@ -976,9 +976,12 @@ function openDayPanel(key){
   const [y,m,d] = key.split('-').map(Number);
   const weekdayLabel = DOW[(new Date(y,m-1,d).getDay()+6)%7];
   const i = state.identity;
+  const todayKey = dateKey(TODAY.getFullYear(), TODAY.getMonth(), TODAY.getDate());
+  const isToday = key === todayKey;
 
-  if(isGuestIdentity(i)){
-    let gHtml = `<h2>${y}年${m}月${d}日</h2><div class="sub">周${weekdayLabel} · 游客查看（不可编辑）</div>`;
+  if(isGuestIdentity(i) || !isToday){
+    const subText = isGuestIdentity(i) ? '游客查看（不可编辑）' : '只能在当天打卡，这天只能查看';
+    let gHtml = `<h2>${y}年${m}月${d}日</h2><div class="sub">周${weekdayLabel} · ${subText}</div>`;
     state.members.forEach((m2,idx)=>{
       const e2 = entries[idx];
       gHtml += `<div class="member-row">
