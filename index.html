@@ -211,6 +211,42 @@ Resources:`;for(let t of c){if(!t||typeof t!=`string`)throw Error(`@supabase/aut
   .chat-bubble-row.mine .chat-bubble{background:var(--leaf);color:#fff;border-color:var(--leaf);}
   .chat-input-row{display:flex;gap:8px;margin-top:10px;}
   .chat-input-row input{flex:1;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-family:inherit;font-size:13.5px;background:#fff;color:var(--ink);}
+
+  /* ---- 首页乐队封面 ---- */
+  .band-banner{position:relative;border-radius:16px;overflow:hidden;margin-bottom:18px;min-height:150px;background:linear-gradient(135deg,#4C7A5E,#2F4A3D);display:flex;align-items:center;justify-content:center;}
+  .band-banner img{width:100%;height:220px;object-fit:cover;display:block;}
+  .band-banner .banner-empty{color:rgba(255,255,255,.85);font-family:'Noto Serif SC',serif;font-size:14px;text-align:center;padding:34px 20px;}
+  .banner-edit-btn{position:absolute;bottom:10px;right:10px;background:rgba(0,0,0,.45);color:#fff;border:none;border-radius:8px;padding:6px 12px;font-size:12px;cursor:pointer;}
+  .banner-edit-btn:hover{background:rgba(0,0,0,.6);}
+
+  /* ---- 个人展示墙（毛毡板）---- */
+  .board-frame{position:relative;width:100%;aspect-ratio:4/3;max-height:480px;border-radius:10px;overflow:hidden;background-color:#6B4A32;
+    background-image:radial-gradient(circle at 18% 28%, rgba(255,255,255,0.05) 0, transparent 40%),
+      radial-gradient(circle at 72% 62%, rgba(255,255,255,0.04) 0, transparent 45%),
+      repeating-linear-gradient(45deg, rgba(255,255,255,0.025) 0 2px, transparent 2px 5px);
+    border:9px solid #7a5a3a;box-shadow:inset 0 0 30px rgba(0,0,0,0.35);touch-action:none;}
+  .board-frame.readonly{touch-action:auto;}
+  .board-el{position:absolute;left:0;top:0;transform-origin:center center;cursor:grab;user-select:none;touch-action:none;}
+  .board-frame.readonly .board-el{cursor:default;}
+  .board-el.dragging{cursor:grabbing;}
+  .board-el img{display:block;max-width:150px;max-height:150px;border-radius:6px;box-shadow:0 4px 10px rgba(0,0,0,.35);border:4px solid #fff;pointer-events:none;}
+  .board-el .el-text{background:rgba(255,250,230,0.95);padding:6px 10px;border-radius:4px;box-shadow:0 3px 8px rgba(0,0,0,.3);font-family:'Noto Serif SC',serif;white-space:pre-wrap;max-width:200px;pointer-events:none;}
+  .board-el .el-sticker{line-height:1;filter:drop-shadow(0 3px 6px rgba(0,0,0,.35));pointer-events:none;}
+  .board-el.selected{outline:2px dashed var(--amber);outline-offset:5px;}
+  .el-toolbar{position:absolute;display:flex;gap:2px;background:#223328;border-radius:8px;padding:4px;box-shadow:0 4px 10px rgba(0,0,0,.3);z-index:999;}
+  .el-toolbar button{background:none;border:none;color:#fff;cursor:pointer;font-size:14px;padding:4px 7px;border-radius:5px;}
+  .el-toolbar button:hover{background:rgba(255,255,255,.18);}
+  .board-toolbar{display:flex;gap:8px;margin-top:10px;flex-wrap:wrap;align-items:center;}
+  .board-toolbar .btn{width:auto;padding:7px 14px;font-size:13px;}
+  .sticker-palette{display:flex;gap:6px;flex-wrap:wrap;background:var(--card);border:1px solid var(--line);border-radius:10px;padding:10px;}
+  .sticker-palette button{font-size:24px;background:none;border:none;cursor:pointer;padding:3px 5px;border-radius:6px;}
+  .sticker-palette button:hover{background:var(--leaf-light);}
+  .text-add-row{display:flex;gap:8px;flex-wrap:wrap;margin:10px 0;}
+  .color-dot{width:22px;height:22px;border-radius:50%;cursor:pointer;border:2px solid transparent;}
+  .color-dot.active{border-color:var(--ink);}
+  .doodle-canvas{position:absolute;inset:0;touch-action:none;}
+  .doodle-toolbar{position:absolute;bottom:8px;left:8px;right:8px;display:flex;gap:8px;align-items:center;background:rgba(0,0,0,0.45);padding:7px 9px;border-radius:10px;flex-wrap:wrap;}
+  .doodle-toolbar .btn{width:auto;padding:5px 12px;font-size:12px;}
 </style>
 </head>
 <body>
@@ -266,6 +302,8 @@ let state = {
   guests: [],             // 游客账号：[{name, joinedAt}]
   credentials: {},        // 每个身份的密码，key 是 identity 值（数字或 'guest:名字'）
   messages: [],           // 私聊消息：[{id, from, to, text, ts}]
+  boards: {},             // 个人展示墙：{ [personId]: { elements:[...] } }
+  bandBanner: null,       // 首页乐队形象图（dataURL）
   activeMonth: 0,
   activeTab: null,        // null = 首页, 'schedule' | 'memories' | 'profile'
   scheduleSub: 'checkin', // 'checkin' | 'meeting'
@@ -380,7 +418,7 @@ async function loadAll(){
     return;
   }
   if(!data){
-    data = { members: PRESET_MEMBERS, checkins: {}, meetings: [], posts: [], profiles: {}, guests: [], credentials: {}, messages: [] };
+    data = { members: PRESET_MEMBERS, checkins: {}, meetings: [], posts: [], profiles: {}, guests: [], credentials: {}, messages: [], boards: {}, bandBanner: null };
     try{ await remoteSet(data); }
     catch(e2){
       renderErrorScreen('初始化云端数据失败：' + e2.message);
@@ -395,6 +433,8 @@ async function loadAll(){
   state.guests = data.guests || [];
   state.credentials = data.credentials || {};
   state.messages = data.messages || [];
+  state.boards = data.boards || {};
+  state.bandBanner = data.bandBanner || null;
   state.identity = loadIdentity();
   renderRoot();
 }
@@ -411,6 +451,8 @@ async function pullLatest(){
       state.guests = data.guests || [];
       state.credentials = data.credentials || {};
       state.messages = data.messages || [];
+      state.boards = data.boards || {};
+      state.bandBanner = data.bandBanner || null;
     }
   }catch(e){ /* 拉取失败就先用本地已有数据 */ }
 }
@@ -425,7 +467,9 @@ async function saveAll(){
       profiles: state.profiles,
       guests: state.guests,
       credentials: state.credentials,
-      messages: state.messages
+      messages: state.messages,
+      boards: state.boards,
+      bandBanner: state.bandBanner
     });
   }catch(e){
     alert('保存失败：' + e.message + '\n请检查网络，或稍后重试一次。');
@@ -589,6 +633,11 @@ function renderMainBody(){
 
 function renderHome(target){
   target.innerHTML = `
+    <div class="band-banner" id="bandBanner">
+      ${state.bandBanner ? `<img src="${state.bandBanner}">` : `<div class="banner-empty">还没有乐队形象图，点右下角传一张吧 🎸</div>`}
+      <button class="banner-edit-btn" id="bannerEditBtn" type="button">更换封面图</button>
+      <input type="file" accept="image/*" id="bannerInput" style="display:none;">
+    </div>
     <div class="home-entries">
       <div class="entry-card" data-tab="schedule"><div class="entry-icon">📅</div><div class="entry-label">日程</div><div class="entry-sub">打卡 · 线上会议</div></div>
       <div class="entry-card" data-tab="memories"><div class="entry-icon">📸</div><div class="entry-label">回忆</div><div class="entry-sub">帖子 · 分享</div></div>
@@ -598,6 +647,17 @@ function renderHome(target){
   `;
   target.querySelectorAll('.entry-card').forEach(c=>{
     c.onclick = ()=>{ state.activeTab = c.dataset.tab; renderMainBody(); };
+  });
+  document.getElementById('bannerEditBtn').onclick = ()=> document.getElementById('bannerInput').click();
+  document.getElementById('bannerInput').addEventListener('change', async (ev)=>{
+    const file = ev.target.files[0];
+    if(!file) return;
+    try{
+      const dataUrl = await fileToResizedDataURL(file, 1200, 0.75);
+      state.bandBanner = dataUrl;
+      await saveAll();
+      renderHome(target);
+    }catch(err){ alert('图片处理失败：' + err.message); }
   });
 }
 
@@ -1194,6 +1254,227 @@ function renderPostCard(p){
 }
 
 /* ---------------- 个人：资料 / 好友 ---------------- */
+/* ---------------- 展示墙：毛毡板贴图 / 贴纸 / 文字 / 涂鸦 ---------------- */
+function getBoard(personId){
+  state.boards = state.boards || {};
+  if(!state.boards[personId]) state.boards[personId] = { elements: [] };
+  return state.boards[personId];
+}
+function nextZ(board){
+  return board.elements.reduce((mx,e)=>Math.max(mx, e.z||0), 0) + 1;
+}
+
+function renderBoardSection(container, personId, editable){
+  const board = getBoard(personId);
+  let selectedId = null;
+  let doodleMode = false;
+  let doodleColor = '#223328';
+  let doodleSize = 5;
+
+  function elHtml(el){
+    const style = `left:${el.x}%;top:${el.y}%;transform:translate(-50%,-50%) rotate(${el.rot||0}deg) scale(${el.scale||1});z-index:${el.z||1};`;
+    let inner;
+    if(el.type==='text'){ inner = `<div class="el-text" style="color:${el.color||'#223328'};font-size:${el.fontSize||16}px;">${escapeHtml(el.text||'')}</div>`; }
+    else if(el.type==='sticker'){ inner = `<div class="el-sticker" style="font-size:${el.fontSize||44}px;">${el.text||''}</div>`; }
+    else{ inner = `<img src="${el.src}" draggable="false">`; }
+    return `<div class="board-el ${selectedId===el.id?'selected':''}" data-id="${el.id}" style="${style}">${inner}</div>`;
+  }
+
+  function paint(){
+    const sorted = [...board.elements].sort((a,b)=>(a.z||0)-(b.z||0));
+    container.innerHTML = `
+      <div class="board-frame ${editable?'':'readonly'}" id="boardFrame">${sorted.map(elHtml).join('')}</div>
+      ${editable && !doodleMode ? `
+        <div class="board-toolbar">
+          <label class="btn btn-ghost" style="cursor:pointer;">+ 图片<input type="file" accept="image/*" id="boardImgInput" style="display:none;"></label>
+          <button class="btn btn-ghost" type="button" id="boardStickerBtn">+ 贴纸</button>
+          <button class="btn btn-ghost" type="button" id="boardTextBtn">+ 文字</button>
+          <button class="btn btn-ghost" type="button" id="boardDoodleBtn">✏️ 涂鸦</button>
+          <span style="font-size:11.5px;color:var(--ink-soft);margin-left:auto;">拖拽移动 · 点一下选中可旋转/缩放/删除</span>
+        </div>` : ''}
+    `;
+    const frame = document.getElementById('boardFrame');
+    if(!frame) return;
+
+    if(editable && doodleMode){ setupDoodle(frame); return; }
+
+    if(editable){
+      const imgInput = document.getElementById('boardImgInput');
+      if(imgInput) imgInput.addEventListener('change', async ev=>{
+        const file = ev.target.files[0]; if(!file) return;
+        try{
+          const src = await fileToResizedDataURL(file, 480, 0.72);
+          board.elements.push({ id:'el_'+Date.now(), type:'image', src, x:50, y:50, rot:0, scale:1, z: nextZ(board) });
+          await saveAll();
+          paint();
+        }catch(err){ alert('图片处理失败：' + err.message); }
+      });
+      const stB = document.getElementById('boardStickerBtn'); if(stB) stB.onclick = openStickerPicker;
+      const txB = document.getElementById('boardTextBtn'); if(txB) txB.onclick = openTextAdder;
+      const doB = document.getElementById('boardDoodleBtn'); if(doB) doB.onclick = ()=>{ doodleMode = true; paint(); };
+    }
+
+    frame.querySelectorAll('.board-el').forEach(node=>{
+      if(!editable) return;
+      const id = node.dataset.id;
+      const el = board.elements.find(e=>e.id===id);
+      if(!el) return;
+      let dragging=false, moved=false, startX=0, startY=0, rect=null;
+      node.addEventListener('pointerdown', ev=>{
+        ev.preventDefault();
+        dragging = true; moved = false;
+        startX = ev.clientX; startY = ev.clientY;
+        rect = frame.getBoundingClientRect();
+        try{ node.setPointerCapture(ev.pointerId); }catch(e){}
+        node.classList.add('dragging');
+      });
+      node.addEventListener('pointermove', ev=>{
+        if(!dragging) return;
+        const dx = ev.clientX - startX, dy = ev.clientY - startY;
+        if(Math.abs(dx)>3 || Math.abs(dy)>3) moved = true;
+        if(moved){
+          let nx = el.x + (dx/rect.width)*100;
+          let ny = el.y + (dy/rect.height)*100;
+          nx = Math.max(4, Math.min(96, nx));
+          ny = Math.max(4, Math.min(96, ny));
+          node.style.left = nx+'%'; node.style.top = ny+'%';
+          node._pendingX = nx; node._pendingY = ny;
+        }
+      });
+      node.addEventListener('pointerup', async ()=>{
+        dragging = false;
+        node.classList.remove('dragging');
+        if(moved && node._pendingX!==undefined){
+          el.x = node._pendingX; el.y = node._pendingY;
+          await saveAll();
+          paint();
+        }else if(!moved){
+          selectedId = (selectedId===id ? null : id);
+          paint();
+        }
+      });
+    });
+
+    if(editable && selectedId){
+      const el = board.elements.find(e=>e.id===selectedId);
+      if(el){
+        const tb = document.createElement('div');
+        tb.className = 'el-toolbar';
+        tb.style.left = el.x+'%';
+        tb.style.top = `calc(${el.y}% - 10%)`;
+        tb.style.transform = 'translate(-50%,-100%)';
+        tb.innerHTML = `
+          <button type="button" data-a="rl" title="逆时针旋转">↺</button>
+          <button type="button" data-a="rr" title="顺时针旋转">↻</button>
+          <button type="button" data-a="sd" title="缩小">－</button>
+          <button type="button" data-a="su" title="放大">＋</button>
+          <button type="button" data-a="del" title="删除">🗑</button>
+        `;
+        frame.appendChild(tb);
+        tb.querySelector('[data-a="rl"]').onclick = async ()=>{ el.rot=(el.rot||0)-15; await saveAll(); paint(); };
+        tb.querySelector('[data-a="rr"]').onclick = async ()=>{ el.rot=(el.rot||0)+15; await saveAll(); paint(); };
+        tb.querySelector('[data-a="sd"]').onclick = async ()=>{ el.scale=Math.max(0.3,(el.scale||1)-0.1); await saveAll(); paint(); };
+        tb.querySelector('[data-a="su"]').onclick = async ()=>{ el.scale=Math.min(2.5,(el.scale||1)+0.1); await saveAll(); paint(); };
+        tb.querySelector('[data-a="del"]').onclick = async ()=>{ board.elements = board.elements.filter(e=>e.id!==selectedId); selectedId=null; await saveAll(); paint(); };
+      }
+    }
+  }
+
+  function openStickerPicker(){
+    const overlay = document.getElementById('overlay');
+    const panel = document.getElementById('panel');
+    const stickers = ['🎸','🥁','🎤','🎹','🎻','🪕','🌿','🎵','❤️','⭐️','🌈','✨','☕️','📷','🎬','🐾'];
+    panel.innerHTML = `<h2>选一个贴纸</h2><div class="sticker-palette">${stickers.map(s=>`<button type="button" data-s="${s}">${s}</button>`).join('')}</div><div class="panel-actions"><button class="btn btn-ghost" id="cancelBtn" style="flex:1;">取消</button></div>`;
+    overlay.classList.add('show');
+    document.getElementById('cancelBtn').onclick = closePanel;
+    panel.querySelectorAll('.sticker-palette button').forEach(b=>{
+      b.onclick = async ()=>{
+        board.elements.push({ id:'el_'+Date.now(), type:'sticker', text:b.dataset.s, x:50, y:50, rot:0, scale:1, fontSize:44, z: nextZ(board) });
+        await saveAll();
+        closePanel();
+        paint();
+      };
+    });
+  }
+
+  function openTextAdder(){
+    const overlay = document.getElementById('overlay');
+    const panel = document.getElementById('panel');
+    const colors = ['#223328','#B4553F','#E2A33D','#6E85A6','#9B7BA6','#ffffff'];
+    panel.innerHTML = `<h2>添加文字</h2>
+      <div class="cfg-field"><input id="boardTextInput" placeholder="写点什么…" maxlength="40"></div>
+      <div class="text-add-row">${colors.map((c,ix)=>`<button type="button" class="color-dot ${ix===0?'active':''}" data-c="${c}" style="background:${c};border:1px solid #ccc;"></button>`).join('')}</div>
+      <div class="panel-actions"><button class="btn btn-ghost" id="cancelBtn">取消</button><button class="btn btn-primary" id="addTextBtn">添加</button></div>`;
+    overlay.classList.add('show');
+    let chosenColor = colors[0];
+    panel.querySelectorAll('.color-dot').forEach(d=>{
+      d.onclick = ()=>{ chosenColor = d.dataset.c; panel.querySelectorAll('.color-dot').forEach(x=>x.classList.toggle('active', x===d)); };
+    });
+    document.getElementById('cancelBtn').onclick = closePanel;
+    document.getElementById('addTextBtn').onclick = async ()=>{
+      const text = document.getElementById('boardTextInput').value.trim();
+      if(!text) return;
+      board.elements.push({ id:'el_'+Date.now(), type:'text', text, color: chosenColor, x:50, y:50, rot:0, scale:1, fontSize:16, z: nextZ(board) });
+      await saveAll();
+      closePanel();
+      paint();
+    };
+  }
+
+  function setupDoodle(frame){
+    const canvas = document.createElement('canvas');
+    canvas.className = 'doodle-canvas';
+    const rect = frame.getBoundingClientRect();
+    canvas.width = rect.width; canvas.height = rect.height;
+    frame.appendChild(canvas);
+    const ctx = canvas.getContext('2d');
+    let drawing = false, lastX = 0, lastY = 0;
+    canvas.addEventListener('pointerdown', ev=>{
+      drawing = true;
+      const r = canvas.getBoundingClientRect();
+      lastX = ev.clientX - r.left; lastY = ev.clientY - r.top;
+      try{ canvas.setPointerCapture(ev.pointerId); }catch(e){}
+    });
+    canvas.addEventListener('pointermove', ev=>{
+      if(!drawing) return;
+      const r = canvas.getBoundingClientRect();
+      const x = ev.clientX - r.left, y = ev.clientY - r.top;
+      ctx.strokeStyle = doodleColor; ctx.lineWidth = doodleSize; ctx.lineCap='round'; ctx.lineJoin='round';
+      ctx.beginPath(); ctx.moveTo(lastX,lastY); ctx.lineTo(x,y); ctx.stroke();
+      lastX = x; lastY = y;
+    });
+    canvas.addEventListener('pointerup', ()=>{ drawing = false; });
+
+    const toolbar = document.createElement('div');
+    toolbar.className = 'doodle-toolbar';
+    const palette = ['#223328','#B4553F','#E2A33D','#6E85A6','#ffffff'];
+    toolbar.innerHTML = `
+      ${palette.map(c=>`<button type="button" class="color-dot ${c===doodleColor?'active':''}" data-c="${c}" style="background:${c};"></button>`).join('')}
+      <span style="color:#fff;font-size:11px;">粗细</span>
+      <input type="range" min="2" max="18" value="${doodleSize}" id="doodleSizeInput" style="width:70px;">
+      <button class="btn btn-ghost" type="button" id="doodleClearBtn">清空</button>
+      <button class="btn btn-ghost" type="button" id="doodleCancelBtn">取消</button>
+      <button class="btn btn-primary" type="button" id="doodleDoneBtn">完成</button>
+    `;
+    frame.appendChild(toolbar);
+    toolbar.querySelectorAll('.color-dot').forEach(d=>{
+      d.onclick = ()=>{ doodleColor = d.dataset.c; toolbar.querySelectorAll('.color-dot').forEach(x=>x.classList.toggle('active', x===d)); };
+    });
+    toolbar.querySelector('#doodleSizeInput').addEventListener('input', ev=>{ doodleSize = +ev.target.value; });
+    toolbar.querySelector('#doodleClearBtn').onclick = ()=> ctx.clearRect(0,0,canvas.width,canvas.height);
+    toolbar.querySelector('#doodleCancelBtn').onclick = ()=>{ doodleMode = false; paint(); };
+    toolbar.querySelector('#doodleDoneBtn').onclick = async ()=>{
+      const dataUrl = canvas.toDataURL('image/png');
+      board.elements.push({ id:'el_'+Date.now(), type:'image', src: dataUrl, x:50, y:50, rot:0, scale:1, z: nextZ(board) });
+      doodleMode = false;
+      await saveAll();
+      paint();
+    };
+  }
+
+  paint();
+}
+
 function renderProfileTab(target){
   if(state.viewingFriend !== null && state.viewingFriend !== undefined){
     renderFriendProfile(target, state.viewingFriend);
@@ -1222,6 +1503,15 @@ function renderProfileTab(target){
             ${['A','B','AB','O'].map(bt=>`<option value="${bt}" ${prof.bloodType===bt?'selected':''}>${bt}型</option>`).join('')}
           </select>
         </div>
+        <div class="field-block"><label>学校</label><input type="text" id="pfSchool" value="${escapeHtml(prof.school||'')}" placeholder="就读的学校"></div>
+        <div class="field-block"><label>MBTI</label>
+          <select id="pfMbti">
+            <option value="">未填写</option>
+            ${['INTJ','INTP','ENTJ','ENTP','INFJ','INFP','ENFJ','ENFP','ISTJ','ISFJ','ESTJ','ESFJ','ISTP','ISFP','ESTP','ESFP'].map(t=>`<option value="${t}" ${prof.mbti===t?'selected':''}>${t}</option>`).join('')}
+          </select>
+        </div>
+        <div class="field-block" style="grid-column:1/-1;"><label>兴趣爱好</label><input type="text" id="pfInterests" value="${escapeHtml(prof.interests||'')}" placeholder="随便写写，比如：猫、拍立得、深夜食堂"></div>
+        <div class="field-block" style="grid-column:1/-1;"><label>个性签名</label><input type="text" id="pfBio" value="${escapeHtml(prof.bio||'')}" placeholder="一句话介绍自己"></div>
         <div class="field-block" style="grid-column:1/-1;"><label>性别</label>
           <div class="gender-btns">
             <button type="button" class="gender-btn ${prof.gender==='武装直升机'?'active':''}" data-g="武装直升机">武装直升机</button>
@@ -1235,6 +1525,11 @@ function renderProfileTab(target){
       </div>
       ${guestSelf? '' : `<div class="profile-stat">累计打卡 <b>${total}</b> 次</div>`}
       <div class="panel-actions" style="margin-top:16px;"><button class="btn btn-primary" id="saveProfileBtn" style="flex:1;">保存资料</button></div>
+    </div>
+    <div class="profile-card">
+      <div class="section-head"><h2>我的展示墙</h2></div>
+      <p class="sub" style="margin-bottom:10px;">贴照片、贴纸、写文字，或者切到涂鸦模式随便画。拖拽移动，点一下选中可以旋转缩放删除。</p>
+      <div id="boardContainer"></div>
     </div>
     <div class="profile-card">
       <div class="section-head"><h2>修改密码</h2></div>
@@ -1285,12 +1580,17 @@ function renderProfileTab(target){
       birthday: document.getElementById('pfBirthday').value,
       bloodType: document.getElementById('pfBlood').value,
       gender: selectedGender,
+      school: document.getElementById('pfSchool').value.trim(),
+      mbti: document.getElementById('pfMbti').value,
+      interests: document.getElementById('pfInterests').value.trim(),
+      bio: document.getElementById('pfBio').value.trim(),
       avatar: pendingAvatar || prof.avatar || null
     };
     await saveAll();
     alert('已保存');
     renderProfileTab(target);
   };
+  renderBoardSection(document.getElementById('boardContainer'), i, true);
   const grid = document.getElementById('friendGrid');
   allPeople().forEach(p2person=>{
     if(String(p2person.id)===String(i)) return;
@@ -1321,9 +1621,17 @@ function renderFriendProfile(target, idx){
       <div class="profile-fields">
         <div class="field-block"><label>生日</label><div>${prof.birthday || '未填写'}</div></div>
         <div class="field-block"><label>血型</label><div>${prof.bloodType? prof.bloodType+'型' : '未填写'}</div></div>
+        <div class="field-block"><label>学校</label><div>${escapeHtml(prof.school || '未填写')}</div></div>
+        <div class="field-block"><label>MBTI</label><div>${prof.mbti || '未填写'}</div></div>
+        <div class="field-block" style="grid-column:1/-1;"><label>兴趣爱好</label><div>${escapeHtml(prof.interests || '未填写')}</div></div>
+        <div class="field-block" style="grid-column:1/-1;"><label>个性签名</label><div>${escapeHtml(prof.bio || '未填写')}</div></div>
         <div class="field-block" style="grid-column:1/-1;"><label>性别</label><div>${prof.gender || '未填写'}</div></div>
       </div>
       ${isGuestFriend? '' : `<div class="profile-stat">累计打卡 <b>${total}</b> 次</div>`}
+    </div>
+    <div class="profile-card">
+      <div class="section-head"><h2>${escapeHtml(mem.name)} 的展示墙</h2></div>
+      <div id="boardContainer"></div>
     </div>
     <div class="chat-card">
       <div class="section-head"><h2>和 ${escapeHtml(mem.name)} 聊天</h2></div>
@@ -1336,6 +1644,7 @@ function renderFriendProfile(target, idx){
   `;
   document.getElementById('backToMe').onclick = ()=>{ state.viewingFriend = null; renderActiveTab(); };
   renderChatThread(idx);
+  renderBoardSection(document.getElementById('boardContainer'), idx, false);
   const sendMsg = async ()=>{
     const input = document.getElementById('chatInput');
     const text = input.value.trim();
