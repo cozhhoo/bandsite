@@ -233,6 +233,7 @@ Resources:`;for(let t of c){if(!t||typeof t!=`string`)throw Error(`@supabase/aut
   .board-el .el-text{background:rgba(255,250,230,0.95);padding:6px 10px;border-radius:4px;box-shadow:0 3px 8px rgba(0,0,0,.3);font-family:'Noto Serif SC',serif;white-space:pre-wrap;max-width:200px;pointer-events:none;}
   .board-el .el-sticker{line-height:1;filter:drop-shadow(0 3px 6px rgba(0,0,0,.35));pointer-events:none;}
   .board-el.selected{outline:2px dashed var(--amber);outline-offset:5px;}
+  .board-doodle-layer{position:absolute;inset:0;width:100%;height:100%;pointer-events:none;z-index:0;}
   .el-toolbar{position:absolute;display:flex;gap:2px;background:#223328;border-radius:8px;padding:4px;box-shadow:0 4px 10px rgba(0,0,0,.3);z-index:999;}
   .el-toolbar button{background:none;border:none;color:#fff;cursor:pointer;font-size:14px;padding:4px 7px;border-radius:5px;}
   .el-toolbar button:hover{background:rgba(255,255,255,.18);}
@@ -1283,7 +1284,7 @@ function renderBoardSection(container, personId, editable){
   function paint(){
     const sorted = [...board.elements].sort((a,b)=>(a.z||0)-(b.z||0));
     container.innerHTML = `
-      <div class="board-frame ${editable?'':'readonly'}" id="boardFrame">${sorted.map(elHtml).join('')}</div>
+      <div class="board-frame ${editable?'':'readonly'}" id="boardFrame">${board.doodle? `<img class="board-doodle-layer" src="${board.doodle}">` : ''}${sorted.map(elHtml).join('')}</div>
       ${editable && !doodleMode ? `
         <div class="board-toolbar">
           <label class="btn btn-ghost" style="cursor:pointer;">+ 图片<input type="file" accept="image/*" id="boardImgInput" style="display:none;"></label>
@@ -1428,6 +1429,12 @@ function renderBoardSection(container, personId, editable){
     canvas.width = rect.width; canvas.height = rect.height;
     frame.appendChild(canvas);
     const ctx = canvas.getContext('2d');
+    // 先把板子上已有的涂鸦画上去，这样是接着画，不是从空白开始
+    if(board.doodle){
+      const img = new Image();
+      img.onload = ()=>{ ctx.drawImage(img, 0, 0, canvas.width, canvas.height); };
+      img.src = board.doodle;
+    }
     let drawing = false, lastX = 0, lastY = 0;
     canvas.addEventListener('pointerdown', ev=>{
       drawing = true;
@@ -1464,8 +1471,8 @@ function renderBoardSection(container, personId, editable){
     toolbar.querySelector('#doodleClearBtn').onclick = ()=> ctx.clearRect(0,0,canvas.width,canvas.height);
     toolbar.querySelector('#doodleCancelBtn').onclick = ()=>{ doodleMode = false; paint(); };
     toolbar.querySelector('#doodleDoneBtn').onclick = async ()=>{
-      const dataUrl = canvas.toDataURL('image/png');
-      board.elements.push({ id:'el_'+Date.now(), type:'image', src: dataUrl, x:50, y:50, rot:0, scale:1, z: nextZ(board) });
+      // 直接存成板子自己的涂鸦图层，不是一个可以拖拽的贴图元素
+      board.doodle = canvas.toDataURL('image/png');
       doodleMode = false;
       await saveAll();
       paint();
