@@ -1814,7 +1814,7 @@ function renderMyProfile(body, target){
             <input type="text" id="pfName" value="${escapeHtml(mem.name)}" maxlength="16">
             <button class="btn btn-ghost" id="saveNameBtn" type="button">保存昵称</button>
           </div>
-          <div class="sub" style="margin:2px 0 0;">${guestSelf? '游客' : escapeHtml(mem.instrument)}</div>
+          <div class="sub" style="margin:2px 0 0;display:flex;align-items:center;gap:8px;">${guestSelf? '游客' : escapeHtml(mem.instrument)}${(isAdmin() && !guestSelf)? `<button class="footer-link" id="editOwnTitleBtn" type="button">编辑称号</button>` : ''}</div>
         </div>
       </div>
       <div class="profile-fields">
@@ -1885,6 +1885,9 @@ function renderMyProfile(body, target){
     else{ await renameMusician(i, newName); }
     renderProfileTab(target);
   };
+  if(isAdmin() && !guestSelf){
+    document.getElementById('editOwnTitleBtn').onclick = ()=> openTitleEditor(i);
+  }
   let selectedGender = prof.gender || '';
   body.querySelectorAll('.gender-btn').forEach(b=>{
     b.onclick = ()=>{
