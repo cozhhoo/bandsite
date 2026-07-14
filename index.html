@@ -33,6 +33,10 @@ Resources:`;for(let t of c){if(!t||typeof t!=`string`)throw Error(`@supabase/aut
   .notif-bell:hover{border-color:var(--leaf);}
   .notif-badge{position:absolute;top:-4px;right:-4px;background:var(--danger);color:#fff;border-radius:999px;min-width:16px;height:16px;font-size:9.5px;display:flex;align-items:center;justify-content:center;padding:0 3px;font-family:'Space Grotesk',sans-serif;}
   .profile-subnav{display:flex;gap:8px;margin-bottom:18px;}
+  .top-bar{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;}
+  .name-edit-row{display:flex;gap:8px;align-items:center;}
+  .name-edit-row input{flex:1;border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-family:'Noto Serif SC',serif;font-weight:700;font-size:16px;background:#fff;color:var(--ink);}
+  .name-edit-row .btn{width:auto;padding:7px 12px;font-size:12px;}
   .float-badge{background:var(--danger);color:#fff;border-radius:999px;font-size:10px;min-width:16px;height:16px;padding:0 4px;display:flex;align-items:center;justify-content:center;font-family:'Space Grotesk',sans-serif;}
   .eyebrow{font-family:'Space Grotesk',sans-serif;font-size:12px;letter-spacing:.18em;text-transform:uppercase;color:var(--leaf);font-weight:700;margin-bottom:6px;}
   h1{font-family:'Noto Serif SC',serif;font-weight:900;font-size:clamp(28px,5vw,42px);margin:0 0 8px;line-height:1.2;}
@@ -332,11 +336,11 @@ let state = {
   identity: undefined
 };
 
-const ADMIN_NAME = '严格上帝';
-const SCHEDULER_NAME = '小鱼';
+const ADMIN_INDEX = 5;      // 严格上帝 的初始下标（改名后权限仍跟着这个位置走）
+const SCHEDULER_INDEX = 1;  // 小鱼 的初始下标
 const DEFAULT_PASSWORD = 'pgdpg402';
-function isAdmin(){ return !!(state.members && state.members[state.identity] && state.members[state.identity].name === ADMIN_NAME); }
-function canManageMeetings(){ return !!(state.members && state.members[state.identity] && state.members[state.identity].name === SCHEDULER_NAME); }
+function isAdmin(){ return state.identity === ADMIN_INDEX; }
+function canManageMeetings(){ return state.identity === SCHEDULER_INDEX; }
 
 /* ---------------- 身份 / 游客 通用工具 ---------------- */
 function isGuestIdentity(id){ return typeof id==='string' && id.indexOf('guest:')===0; }
@@ -372,6 +376,45 @@ function unreadMsgCount(personId){
 }
 function unreadMsgFrom(personId, otherId){
   return (state.messages||[]).filter(m=> String(m.to)===String(personId) && String(m.from)===String(otherId) && !m.read).length;
+}
+
+function nameTaken(newName, excludeId){
+  const musicianClash = state.members.some((m,idx)=> m.name===newName && String(idx)!==String(excludeId));
+  const guestClash = (state.guests||[]).some(g=> g.name===newName && ('guest:'+g.name)!==String(excludeId));
+  return musicianClash || guestClash;
+}
+
+async function renameMusician(i, newName){
+  state.members[i].name = newName;
+  await saveAll();
+}
+
+async function renameGuest(oldName, newName){
+  const oldId = 'guest:'+oldName, newId = 'guest:'+newName;
+  const g = getGuest(oldName);
+  if(g) g.name = newName;
+  if(state.credentials && oldId in state.credentials){ state.credentials[newId] = state.credentials[oldId]; delete state.credentials[oldId]; }
+  if(state.profiles && oldId in state.profiles){ state.profiles[newId] = state.profiles[oldId]; delete state.profiles[oldId]; }
+  if(state.boards && oldId in state.boards){ state.boards[newId] = state.boards[oldId]; delete state.boards[oldId]; }
+  (state.messages||[]).forEach(m=>{
+    if(m.from===oldId) m.from = newId;
+    if(m.to===oldId) m.to = newId;
+  });
+  (state.notifications||[]).forEach(n=>{
+    if(n.to===oldId) n.to = newId;
+    if(n.fromId===oldId) n.fromId = newId;
+  });
+  (state.posts||[]).forEach(p=>{
+    if(p.authorIdx===oldId) p.authorIdx = newId;
+    p.likes = (p.likes||[]).map(x=> x===oldId? newId : x);
+    (p.comments||[]).forEach(c=>{ if(c.authorIdx===oldId) c.authorIdx = newId; });
+  });
+  (state.nameProposals||[]).forEach(np=>{
+    if(np.authorIdx===oldId) np.authorIdx = newId;
+    ['like','consider','meh'].forEach(k=>{ np.reactions[k] = (np.reactions[k]||[]).map(x=> x===oldId? newId : x); });
+  });
+  await saveAll();
+  saveIdentity(newId);
 }
 function convKey(a,b){ return [String(a),String(b)].sort().join('__'); }
 
@@ -573,7 +616,7 @@ function renderMusicianGrid(){
     const b = document.createElement('button');
     b.className = 'id-btn';
     b.style.setProperty('--mc', MEMBER_COLORS[i]);
-    const tag = mem.name===ADMIN_NAME ? '（管理员）' : '';
+    const tag = i===ADMIN_INDEX ? '（管理员）' : '';
     b.innerHTML = `<span class="id-dot" style="background:${MEMBER_COLORS[i]}"></span><span class="id-text"><b>${mem.name}${tag}</b><small>${mem.instrument}</small></span>`;
     b.onclick = ()=> renderPasswordPrompt(i, mem.name, renderMusicianGrid);
     grid.appendChild(b);
@@ -717,9 +760,12 @@ function renderMainBody(){
   if(state.activeTab === null){
     renderHome(target);
   }else{
-    target.innerHTML = `<button class="back-link" id="backHome">← 返回首页</button><div class="tabs" id="mainTabs"></div><div id="tabContent"></div>`;
+    target.innerHTML = `<div class="top-bar"><button class="back-link" id="backHome">← 返回首页</button><button class="icon-btn" id="refreshBtn">↻ 刷新最新数据</button></div><div id="tabContent"></div>`;
     document.getElementById('backHome').onclick = ()=>{ state.activeTab=null; state.viewingFriend=null; renderMainBody(); };
-    renderMainTabs();
+    document.getElementById('refreshBtn').onclick = async ()=>{
+      await pullLatest();
+      renderActiveTab();
+    };
     renderActiveTab();
   }
 }
@@ -775,19 +821,6 @@ function openAnnounceEditor(target){
     await saveAll();
     closePanel();
     renderHome(target);
-  };
-}
-
-function renderMainTabs(){
-  const wrap = document.getElementById('mainTabs');
-  const tabs = [ ['schedule','日程'], ['memories','回忆'], ['profile','个人'] ];
-  // 三个标签只作为"当前位置"提示，不能直接点击互相切换——要切换必须先返回首页
-  wrap.innerHTML = tabs.map(([key,label])=>
-    `<span class="tab-btn main-tab-locked ${state.activeTab===key?'active':''}">${label}</span>`
-  ).join('') + `<div class="spacer"></div><button class="icon-btn" id="refreshBtn">↻ 刷新最新数据</button>`;
-  document.getElementById('refreshBtn').onclick = async ()=>{
-    await pullLatest();
-    renderActiveTab();
   };
 }
 
@@ -1776,9 +1809,12 @@ function renderMyProfile(body, target){
       <div class="profile-top">
         <div class="avatar-big" id="avatarBtn">${prof.avatar? `<img src="${prof.avatar}">` : (mem.name[0]||'')}</div>
         <input type="file" accept="image/*" id="avatarInput" style="display:none;">
-        <div>
-          <div style="font-family:'Noto Serif SC',serif;font-weight:700;font-size:18px;">${mem.name}</div>
-          <div class="sub" style="margin:0;">${mem.instrument}</div>
+        <div style="flex:1;">
+          <div class="name-edit-row">
+            <input type="text" id="pfName" value="${escapeHtml(mem.name)}" maxlength="16">
+            <button class="btn btn-ghost" id="saveNameBtn" type="button">保存昵称</button>
+          </div>
+          <div class="sub" style="margin:2px 0 0;">${guestSelf? '游客' : escapeHtml(mem.instrument)}</div>
         </div>
       </div>
       <div class="profile-fields">
@@ -1840,6 +1876,15 @@ function renderMyProfile(body, target){
     document.getElementById('newPwd').value = '';
     document.getElementById('newPwd2').value = '';
   };
+  document.getElementById('saveNameBtn').onclick = async ()=>{
+    const newName = document.getElementById('pfName').value.trim();
+    if(!newName){ alert('名字不能为空'); return; }
+    if(newName === mem.name){ return; }
+    if(nameTaken(newName, i)){ alert('这个名字已经被用过了，换一个吧'); return; }
+    if(guestSelf){ await renameGuest(mem.name, newName); }
+    else{ await renameMusician(i, newName); }
+    renderProfileTab(target);
+  };
   let selectedGender = prof.gender || '';
   body.querySelectorAll('.gender-btn').forEach(b=>{
     b.onclick = ()=>{
@@ -1875,6 +1920,31 @@ function renderMyProfile(body, target){
   renderBoardSection(document.getElementById('boardContainer'), i, true);
 }
 
+function openTitleEditor(idx){
+  const overlay = document.getElementById('overlay');
+  const panel = document.getElementById('panel');
+  const mem = state.members[idx];
+  panel.innerHTML = `<h2>编辑 ${escapeHtml(mem.name)} 的称号</h2>
+    <div class="cfg-field"><input id="titleInput" value="${escapeHtml(mem.instrument||'')}" placeholder="比如：主唱、节奏担当、精神股东"></div>
+    <div class="panel-actions">
+      <button class="btn btn-ghost" id="clearTitleBtn">清除称号</button>
+      <button class="btn btn-primary" id="saveTitleBtn">保存</button>
+    </div>`;
+  overlay.classList.add('show');
+  document.getElementById('clearTitleBtn').onclick = async ()=>{
+    mem.instrument = '';
+    await saveAll();
+    closePanel();
+    renderActiveTab();
+  };
+  document.getElementById('saveTitleBtn').onclick = async ()=>{
+    mem.instrument = document.getElementById('titleInput').value.trim();
+    await saveAll();
+    closePanel();
+    renderActiveTab();
+  };
+}
+
 function renderFriendProfile(target, idx){
   const mem = getPersonById(idx);
   const prof = state.profiles[idx] || {};
@@ -1887,7 +1957,7 @@ function renderFriendProfile(target, idx){
         <div class="avatar-big">${prof.avatar? `<img src="${prof.avatar}">` : (mem.name[0]||'')}</div>
         <div>
           <div style="font-family:'Noto Serif SC',serif;font-weight:700;font-size:18px;">${mem.name}</div>
-          <div class="sub" style="margin:0;">${mem.instrument}</div>
+          <div class="sub" style="margin:0;display:flex;align-items:center;gap:8px;">${isGuestFriend? '游客' : escapeHtml(mem.instrument)}${(isAdmin() && !isGuestFriend)? `<button class="footer-link" id="editTitleBtn" type="button">编辑称号</button>` : ''}</div>
         </div>
       </div>
       <div class="profile-fields">
@@ -1915,6 +1985,9 @@ function renderFriendProfile(target, idx){
     </div>
   `;
   document.getElementById('backToMe').onclick = ()=>{ state.viewingFriend = null; renderActiveTab(); };
+  if(isAdmin() && !isGuestFriend){
+    document.getElementById('editTitleBtn').onclick = ()=> openTitleEditor(idx);
+  }
   markMessagesRead(idx);
   renderChatThread(idx);
   renderBoardSection(document.getElementById('boardContainer'), idx, false);
