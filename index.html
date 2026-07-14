@@ -32,8 +32,16 @@ Resources:`;for(let t of c){if(!t||typeof t!=`string`)throw Error(`@supabase/aut
   .notif-bell{position:absolute;top:0;right:0;background:var(--card);border:1px solid var(--line);border-radius:50%;width:38px;height:38px;font-size:16px;cursor:pointer;display:flex;align-items:center;justify-content:center;}
   .notif-bell:hover{border-color:var(--leaf);}
   .notif-badge{position:absolute;top:-4px;right:-4px;background:var(--danger);color:#fff;border-radius:999px;min-width:16px;height:16px;font-size:9.5px;display:flex;align-items:center;justify-content:center;padding:0 3px;font-family:'Space Grotesk',sans-serif;}
+  .daily-quote{margin-top:12px;padding:12px 16px;background:var(--card);border:1px dashed var(--line);border-radius:10px;}
+  .dq-label{font-family:'Space Grotesk',sans-serif;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--leaf);font-weight:700;margin-bottom:4px;}
+  .dq-text{font-family:'Noto Serif SC',serif;font-size:14.5px;color:var(--ink);line-height:1.6;}
   .profile-subnav{display:flex;gap:8px;margin-bottom:18px;}
   .top-bar{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;}
+  .checkin-detail-row{display:grid;grid-template-columns:90px 70px 1fr;gap:10px;align-items:baseline;padding:8px 0;border-top:1px solid var(--line);font-size:13px;}
+  .checkin-detail-row:first-child{border-top:none;}
+  .checkin-detail-date{font-family:'Space Grotesk',sans-serif;color:var(--ink-soft);font-size:12px;}
+  .checkin-detail-name{font-weight:700;}
+  .checkin-detail-note{color:var(--ink);}
   .name-edit-row{display:flex;gap:8px;align-items:center;}
   .name-edit-row input{flex:1;border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-family:'Noto Serif SC',serif;font-weight:700;font-size:16px;background:#fff;color:var(--ink);}
   .name-edit-row .btn{width:auto;padding:7px 12px;font-size:12px;}
@@ -691,15 +699,70 @@ function renderPasswordPrompt(id, displayName, onBack){
 }
 
 /* ---------------- MAIN APP SHELL ---------------- */
+const DAILY_QUOTES = [
+  '青春不是用来回忆的，是用来一起犯傻的。',
+  '声音会跑调，友情不会。',
+  '我们唱得不算好，但唱得很真。',
+  '分享一段旋律，就是分享半个夏天。',
+  '排练室的灯光，是我们共同的月光。',
+  '走音也没关系，反正我们一起走。',
+  '青春就是把普通的日子，弹成一首歌。',
+  '六个人，六种声音，一个夏天。',
+  '好的乐队不是完美，是愿意一起继续。',
+  '今天的练习，是明天舞台的伏笔。',
+  '别怕唱错，怕的是不敢开口。',
+  '我们的默契，是练出来的，不是天生的。',
+  '青春很短，所以要用力弹。',
+  '一个人可以走得快，一支乐队才能走得远。',
+  '今天也要把心里的话，弹给彼此听。',
+  '好听的和声，是耐心攒出来的。',
+  '夏天会过去，这段旋律不会。',
+  '分享不是炫耀，是让别人也听见你的心跳。',
+  '青春是不完美的demo，却是最珍贵的版本。',
+  '我们吵过、笑过、跑调过，但从没散过。',
+  '每一次合奏，都是一次重新认识彼此。',
+  '美好不在远方，就在今天的练习里。',
+  '青春不用滤镜，本来就好看。',
+  '一起走音的人，才是真正的队友。',
+  '音乐会老去，但这段一起练习的时光不会。',
+  '我们弹的不只是曲子，是彼此的青春。',
+  '今天多练一遍，是给未来的自己留的礼物。',
+  '别小看一次普通的排练，它也是青春的一部分。',
+  '好的分享，是把喜欢的东西，变成"我们的"。',
+  '六个人凑在一起，就是一整个宇宙的热闹。',
+  '青春没有草稿纸，每一次演出都算数。',
+  '我们的乐队，是彼此在异地夏天里的一束光。',
+  '分享一首歌，其实是在说"我懂你"。',
+  '美好的事情，往往就是几个人一起坚持的小事。',
+  '练习不是为了完美，是为了不留遗憾。',
+  '青春就是，明知道会累，还是想一起走下去。',
+  '我们唱歌给彼此听，也唱给未来的自己听。',
+  '一起做过的傻事，都会变成很酷的回忆。',
+  '好的团队，是把"我"变成"我们"的过程。',
+  '今天也要好好练习，好好生活，好好爱这个夏天。'
+];
+function pickDailyQuote(){
+  const now = new Date();
+  const start = new Date(now.getFullYear(), 0, 0);
+  const dayOfYear = Math.floor((now - start) / 86400000);
+  const idx = ((dayOfYear % DAILY_QUOTES.length) + DAILY_QUOTES.length) % DAILY_QUOTES.length;
+  const dateStr = `${now.getFullYear()}年${now.getMonth()+1}月${now.getDate()}日`;
+  return { text: DAILY_QUOTES[idx], date: dateStr };
+}
+
 function render(){
   const app = document.getElementById('app');
   const me = getPersonById(state.identity);
+  const dq = pickDailyQuote();
   app.innerHTML = `
     <header>
       <button class="notif-bell" id="notifBell" type="button">🔔<span class="notif-badge" id="notifBadge" style="display:none;">0</span></button>
       <div class="eyebrow">皮菇文化有限公司 · 团队小站</div>
-      <h1>${me.name}<br>暑期一起打卡、留念、分享</h1>
-      <p class="sub">数据存在你们自己的云端存储里，跟 Claude 无关。</p>
+      <h1>${me.name}</h1>
+      <div class="daily-quote">
+        <div class="dq-label">今日寄语 · ${dq.date}</div>
+        <div class="dq-text">${escapeHtml(dq.text)}</div>
+      </div>
     </header>
     <div id="mainBody"></div>
     <footer>数据对所有登录的人共享可见 · <button class="footer-link" id="switchId">不是你？切换身份</button></footer>
@@ -778,14 +841,14 @@ function renderHome(target){
       <button class="banner-edit-btn" id="bannerEditBtn" type="button">更换封面图</button>
       <input type="file" accept="image/*" id="bannerInput" style="display:none;">
     </div>
-    <div class="announce-card">
-      <div class="section-head"><h2>📣 练习公告</h2>${canEditAnnounce? `<button class="footer-link" id="editAnnounceBtn" type="button">编辑</button>`:''}</div>
-      <div class="announce-body" id="announceBody">${state.announcement? escapeHtml(state.announcement).replace(/\n/g,'<br>') : '暂无公告，好好练习吧 🎵'}</div>
-    </div>
     <div class="home-entries">
       <div class="entry-card" data-tab="schedule"><div class="entry-icon">📅</div><div class="entry-label">日程</div><div class="entry-sub">打卡 · 线上会议</div></div>
       <div class="entry-card" data-tab="memories"><div class="entry-icon">📸</div><div class="entry-label">回忆</div><div class="entry-sub">帖子 · 分享</div></div>
       <div class="entry-card" data-tab="profile"><div class="entry-icon">🧑</div><div class="entry-label">个人</div><div class="entry-sub">我的资料</div></div>
+    </div>
+    <div class="announce-card">
+      <div class="section-head"><h2>📣 练习公告</h2>${canEditAnnounce? `<button class="footer-link" id="editAnnounceBtn" type="button">编辑</button>`:''}</div>
+      <div class="announce-body" id="announceBody">${state.announcement? escapeHtml(state.announcement).replace(/\n/g,'<br>') : '暂无公告，好好练习吧 🎵'}</div>
     </div>
     <div class="instrument-deco">🎤 🎸 🥁 🎹 🎻 🪕</div>
   `;
@@ -873,12 +936,41 @@ function renderScheduleSubBody(){
         <div class="journal-note">每片叶子是一次打卡，工作日才会长叶子，小圆点代表周末休息日。</div>
         <div id="journalBody"></div>
       </div>
+      <div class="journal">
+        <div class="journal-head"><h2>团队打卡明细</h2></div>
+        <div class="journal-note">谁在哪天练了什么，所有人都能看到。</div>
+        <div id="checkinDetailBody"></div>
+      </div>
     `;
     renderMonthTabs();
     renderQuickArea();
     renderCalendar();
     renderJournal();
+    renderCheckinDetailList();
   }
+}
+
+function renderCheckinDetailList(){
+  const body = document.getElementById('checkinDetailBody');
+  if(!body) return;
+  const rows = [];
+  Object.keys(state.checkins||{}).sort().reverse().forEach(dateKeyStr=>{
+    const entries = state.checkins[dateKeyStr] || [];
+    entries.forEach((e, idx)=>{
+      if(e && e.checked){
+        const mem = state.members[idx];
+        if(mem) rows.push({ date: dateKeyStr, name: mem.name, color: MEMBER_COLORS[idx], note: e.note || '' });
+      }
+    });
+  });
+  if(rows.length===0){ body.innerHTML = `<div class="empty-hint">还没有人打卡</div>`; return; }
+  body.innerHTML = rows.map(r=>`
+    <div class="checkin-detail-row">
+      <div class="checkin-detail-date">${r.date}</div>
+      <div class="checkin-detail-name" style="color:${r.color};">${escapeHtml(r.name)}</div>
+      <div class="checkin-detail-note">${r.note? escapeHtml(r.note) : '<span style="color:var(--ink-soft);">（没写练了什么）</span>'}</div>
+    </div>
+  `).join('');
 }
 
 function renderMonthTabs(){
@@ -1074,7 +1166,7 @@ function renderQuickArea(){
       entries2[i].note = document.getElementById('quickNote').value;
       state.checkins[key] = entries2;
       await saveCheckins();
-      renderQuickArea(); renderCalendar(); renderJournal();
+      renderQuickArea(); renderCalendar(); renderJournal(); renderCheckinDetailList();
     };
     document.getElementById('quickNote').addEventListener('change', async (ev)=>{
       const entries2 = getEntries(key).map(x=>({...x}));
@@ -1193,7 +1285,7 @@ function openDayPanel(key){
     state.checkins[key] = entries;
     await saveCheckins();
     closePanel();
-    renderCalendar(); renderJournal(); renderQuickArea();
+    renderCalendar(); renderJournal(); renderQuickArea(); renderCheckinDetailList();
   };
 }
 function closePanel(){ document.getElementById('overlay').classList.remove('show'); }
