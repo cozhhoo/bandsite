@@ -37,11 +37,6 @@ Resources:`;for(let t of c){if(!t||typeof t!=`string`)throw Error(`@supabase/aut
   .dq-text{font-family:'Noto Serif SC',serif;font-size:14.5px;color:var(--ink);line-height:1.6;}
   .profile-subnav{display:flex;gap:8px;margin-bottom:18px;}
   .top-bar{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;}
-  .checkin-detail-row{display:grid;grid-template-columns:90px 70px 1fr;gap:10px;align-items:baseline;padding:8px 0;border-top:1px solid var(--line);font-size:13px;}
-  .checkin-detail-row:first-child{border-top:none;}
-  .checkin-detail-date{font-family:'Space Grotesk',sans-serif;color:var(--ink-soft);font-size:12px;}
-  .checkin-detail-name{font-weight:700;}
-  .checkin-detail-note{color:var(--ink);}
   .name-edit-row{display:flex;gap:8px;align-items:center;}
   .name-edit-row input{flex:1;border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-family:'Noto Serif SC',serif;font-weight:700;font-size:16px;background:#fff;color:var(--ink);}
   .name-edit-row .btn{width:auto;padding:7px 12px;font-size:12px;}
@@ -936,41 +931,12 @@ function renderScheduleSubBody(){
         <div class="journal-note">每片叶子是一次打卡，工作日才会长叶子，小圆点代表周末休息日。</div>
         <div id="journalBody"></div>
       </div>
-      <div class="journal">
-        <div class="journal-head"><h2>团队打卡明细</h2></div>
-        <div class="journal-note">谁在哪天练了什么，所有人都能看到。</div>
-        <div id="checkinDetailBody"></div>
-      </div>
     `;
     renderMonthTabs();
     renderQuickArea();
     renderCalendar();
     renderJournal();
-    renderCheckinDetailList();
   }
-}
-
-function renderCheckinDetailList(){
-  const body = document.getElementById('checkinDetailBody');
-  if(!body) return;
-  const rows = [];
-  Object.keys(state.checkins||{}).sort().reverse().forEach(dateKeyStr=>{
-    const entries = state.checkins[dateKeyStr] || [];
-    entries.forEach((e, idx)=>{
-      if(e && e.checked){
-        const mem = state.members[idx];
-        if(mem) rows.push({ date: dateKeyStr, name: mem.name, color: MEMBER_COLORS[idx], note: e.note || '' });
-      }
-    });
-  });
-  if(rows.length===0){ body.innerHTML = `<div class="empty-hint">还没有人打卡</div>`; return; }
-  body.innerHTML = rows.map(r=>`
-    <div class="checkin-detail-row">
-      <div class="checkin-detail-date">${r.date}</div>
-      <div class="checkin-detail-name" style="color:${r.color};">${escapeHtml(r.name)}</div>
-      <div class="checkin-detail-note">${r.note? escapeHtml(r.note) : '<span style="color:var(--ink-soft);">（没写练了什么）</span>'}</div>
-    </div>
-  `).join('');
 }
 
 function renderMonthTabs(){
@@ -1113,16 +1079,37 @@ function openMeetingForm(presetDate){
 function renderQuickArea(){
   const area = document.getElementById('quickArea');
   const i = state.identity;
-  if(isGuestIdentity(i)){
-    area.innerHTML = `<div class="quick-card rest"><div class="quick-info">
-      <div class="quick-label">游客模式</div><div class="quick-name">你可以查看大家的打卡情况，但不能代替他们打卡 👀</div>
-    </div></div>`;
-    return;
-  }
-  const mem = state.members[i];
   const y=TODAY.getFullYear(), m=TODAY.getMonth(), d=TODAY.getDate();
   const key = dateKey(y,m,d);
   const weekend = isWeekend(y,m,d);
+
+  function overviewHtml(){
+    const entries2 = getEntries(key);
+    const doneCount = entries2.filter(e=>e.checked).length;
+    let h = `<div class="overview-card">
+      <div class="overview-head">
+        <div class="overview-title">全员今日打卡总览</div>
+        <div class="overview-count">${weekend? '周末休息' : `<b>${doneCount}</b> / ${state.members.length} 完成`}</div>
+      </div>
+      <div class="overview-list">`;
+    state.members.forEach((m2,idx)=>{
+      const done = !weekend && entries2[idx].checked;
+      h += `<div class="ov-row">
+        <div class="ov-dot ${done?'done':''}" style="${done? 'background:'+MEMBER_COLORS[idx]+';':''}"></div>
+        <div class="ov-name">${m2.name}<small>${m2.instrument}${!weekend && entries2[idx].note? ' · '+entries2[idx].note : ''}</small></div>
+      </div>`;
+    });
+    h += `</div></div>`;
+    return h;
+  }
+
+  if(isGuestIdentity(i)){
+    area.innerHTML = `<div class="quick-card rest"><div class="quick-info">
+      <div class="quick-label">游客模式</div><div class="quick-name">你可以查看大家的打卡情况，但不能代替他们打卡 👀</div>
+    </div></div>` + overviewHtml();
+    return;
+  }
+  const mem = state.members[i];
   let html = '';
   if(weekend){
     html = `<div class="quick-card rest"><div class="quick-info">
@@ -1140,24 +1127,7 @@ function renderQuickArea(){
       <div class="quick-toggle ${e.checked?'on':''}" id="quickToggle" style="${e.checked? 'background:'+MEMBER_COLORS[i]+';':''}">${e.checked?'✓':''}</div>
     </div>`;
   }
-  if(isAdmin()){
-    const entries2 = getEntries(key);
-    const doneCount = entries2.filter(e=>e.checked).length;
-    html += `<div class="overview-card">
-      <div class="overview-head">
-        <div class="overview-title">全员今日打卡总览（仅管理员可见）</div>
-        <div class="overview-count">${weekend? '周末休息' : `<b>${doneCount}</b> / ${state.members.length} 完成`}</div>
-      </div>
-      <div class="overview-list">`;
-    state.members.forEach((m2,idx)=>{
-      const done = !weekend && entries2[idx].checked;
-      html += `<div class="ov-row">
-        <div class="ov-dot ${done?'done':''}" style="${done? 'background:'+MEMBER_COLORS[idx]+';':''}"></div>
-        <div class="ov-name">${m2.name}<small>${m2.instrument}${!weekend && entries2[idx].note? ' · '+entries2[idx].note : ''}</small></div>
-      </div>`;
-    });
-    html += `</div></div>`;
-  }
+  html += overviewHtml();
   area.innerHTML = html;
   if(!weekend){
     document.getElementById('quickToggle').onclick = async ()=>{
@@ -1166,7 +1136,7 @@ function renderQuickArea(){
       entries2[i].note = document.getElementById('quickNote').value;
       state.checkins[key] = entries2;
       await saveCheckins();
-      renderQuickArea(); renderCalendar(); renderJournal(); renderCheckinDetailList();
+      renderQuickArea(); renderCalendar(); renderJournal();
     };
     document.getElementById('quickNote').addEventListener('change', async (ev)=>{
       const entries2 = getEntries(key).map(x=>({...x}));
@@ -1285,7 +1255,7 @@ function openDayPanel(key){
     state.checkins[key] = entries;
     await saveCheckins();
     closePanel();
-    renderCalendar(); renderJournal(); renderQuickArea(); renderCheckinDetailList();
+    renderCalendar(); renderJournal(); renderQuickArea();
   };
 }
 function closePanel(){ document.getElementById('overlay').classList.remove('show'); }
