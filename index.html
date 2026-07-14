@@ -182,6 +182,7 @@ Resources:`;for(let t of c){if(!t||typeof t!=`string`)throw Error(`@supabase/aut
   .post-actions{display:flex;gap:14px;margin-top:10px;align-items:center;}
   .post-like{background:none;border:none;cursor:pointer;font-size:13px;color:var(--ink-soft);display:flex;align-items:center;gap:4px;}
   .post-like.liked{color:var(--danger);}
+  .post-liked-by{font-size:11.5px;color:var(--ink-soft);margin-top:2px;}
   .post-del{background:none;border:none;cursor:pointer;font-size:12px;color:var(--ink-soft);text-decoration:underline;}
   .comments{margin-top:10px;border-top:1px solid var(--line);padding-top:10px;}
   .comment-row{font-size:13px;margin-bottom:6px;}
@@ -1470,6 +1471,7 @@ function renderPostCard(p){
       <button class="post-like ${liked?'liked':''}" data-id="${p.id}">${liked?'❤':'♡'} ${(p.likes||[]).length||''}</button>
       ${canDel? `<button class="post-del" data-id="${p.id}">删除</button>` : ''}
     </div>
+    ${(p.likes||[]).length>0 ? `<div class="post-liked-by">❤ ${ (p.likes||[]).map(lid=>escapeHtml(getPersonById(lid).name)).join('、') } 点了赞</div>` : ''}
     <div class="comments">
       ${(p.comments||[]).map((c,ci)=>{
         const cAuthor = getPersonById(c.authorIdx);
