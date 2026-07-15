@@ -389,7 +389,7 @@ function nameTaken(newName, excludeId){
 
 async function renameMusician(i, newName){
   state.members[i].name = newName;
-  await saveAll();
+  await queueSave();
 }
 
 async function renameGuest(oldName, newName){
@@ -416,7 +416,7 @@ async function renameGuest(oldName, newName){
     if(np.authorIdx===oldId) np.authorIdx = newId;
     ['like','consider','meh'].forEach(k=>{ np.reactions[k] = (np.reactions[k]||[]).map(x=> x===oldId? newId : x); });
   });
-  await saveAll();
+  await queueSave();
   saveIdentity(newId);
 }
 function convKey(a,b){ return [String(a),String(b)].sort().join('__'); }
@@ -481,6 +481,50 @@ async function remoteSet(data){
   if(error) throw new Error('保存到云端失败：' + error.message);
 }
 
+/* ---------------- 实时同步（Supabase Realtime）----------------
+   之前的问题：想知道对方有没有新消息，只能靠手动点"刷新最新数据"，
+   或者等待下一次操作。这里订阅这张表的变化，只要任何人保存了新数据，
+   所有打开着网页的人都会在几乎同一瞬间收到推送，不用再手动刷新。
+   注意：这需要在 Supabase 后台把 checkin 这张表的 Realtime 打开——
+   Supabase 控制台 → Database → Replication，把 checkin 表的开关打开，
+   不然下面这个订阅不会收到任何推送（代码本身不会报错，只是收不到）。 */
+function applyRemoteData(data){
+  if(!data) return;
+  state.members = data.members || state.members;
+  state.checkins = data.checkins || {};
+  state.meetings = data.meetings || [];
+  state.posts = data.posts || [];
+  state.profiles = data.profiles || {};
+  state.guests = data.guests || [];
+  state.credentials = data.credentials || {};
+  state.messages = data.messages || [];
+  state.boards = data.boards || {};
+  state.bandBanner = data.bandBanner || null;
+  state.notifications = data.notifications || [];
+  state.announcement = data.announcement || '';
+  state.nameProposals = data.nameProposals || [];
+}
+
+function startRealtimeSync(){
+  try{
+    supabaseClient
+      .channel('band-site-sync')
+      .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'checkin', filter: 'date=eq.main_data' }, (payload)=>{
+        if(!payload.new || !payload.new.data) return;
+        applyRemoteData(payload.new.data);
+        renderNotifBell();
+        // 只刷新当前正在看的那一小块界面，不做整页重绘，避免打断正在输入的内容
+        if(document.getElementById('postList')) renderPostList();
+        if(document.getElementById('chatThread') && state.viewingFriend !== null && state.viewingFriend !== undefined){
+          renderChatThread(state.viewingFriend);
+        }
+      })
+      .subscribe();
+  }catch(e){
+    console.error('实时同步订阅失败（不影响手动刷新）：', e);
+  }
+}
+
 /* identity 只保存在本机浏览器，不需要跨设备同步 */
 function loadIdentity(){
   try{ const v = localStorage.getItem('band-identity'); return v===null? null : JSON.parse(v); }
@@ -521,6 +565,7 @@ async function loadAll(){
   state.announcement = data.announcement || '';
   state.nameProposals = data.nameProposals || [];
   state.identity = loadIdentity();
+  startRealtimeSync();
   renderRoot();
 }
 
@@ -567,6 +612,24 @@ async function saveAll(){
   }
 }
 const saveCheckins = saveAll; // 兼容旧函数名
+
+/* 保存排队器：每次都是整份数据整体上传，短时间内连续操作（比如连发几条消息）
+   会触发好几个并发的网络请求，谁先谁后完全看网络状况，慢的那个后到达
+   反而会把快的那个覆盖掉——这就是"发几条消息、内容会消失/要很久才出现"的
+   根本原因。用这个队列把保存严格排成一个接一个，绝不并发，并且如果保存
+   进行中又来了新的改动，只会在当前这次结束后再补发"最新状态"一次，
+   不会无限堆积请求。 */
+let saveInFlight = false, saveAgainNeeded = false;
+async function queueSave(){
+  saveAgainNeeded = true;
+  if(saveInFlight) return;
+  saveInFlight = true;
+  while(saveAgainNeeded){
+    saveAgainNeeded = false;
+    await saveAll();
+  }
+  saveInFlight = false;
+}
 
 /* ---------------- ERROR SCREEN ---------------- */
 function renderErrorScreen(msg){
@@ -664,7 +727,7 @@ function renderVisitorChoice(){
     state.guests.push({ name, joinedAt: Date.now() });
     state.credentials = state.credentials || {};
     state.credentials['guest:'+name] = pwd;
-    await saveAll();
+    await queueSave();
     saveIdentity('guest:'+name);
     renderRoot();
   };
@@ -809,7 +872,7 @@ function openNotifPanel(){
   renderNotifBell();
   document.getElementById('cancelBtn').onclick = async ()=>{
     closePanel();
-    if(changed) await saveAll();
+    if(changed) await queueSave();
   };
 }
 
@@ -857,7 +920,7 @@ function renderHome(target){
     try{
       const dataUrl = await fileToResizedDataURL(file, 1200, 0.75);
       state.bandBanner = dataUrl;
-      await saveAll();
+      await queueSave();
       renderHome(target);
     }catch(err){ alert('图片处理失败：' + err.message); }
   });
@@ -876,7 +939,7 @@ function openAnnounceEditor(target){
   document.getElementById('cancelBtn').onclick = closePanel;
   document.getElementById('saveAnnounceBtn').onclick = async ()=>{
     state.announcement = document.getElementById('announceInput').value.trim();
-    await saveAll();
+    await queueSave();
     closePanel();
     renderHome(target);
   };
@@ -1005,7 +1068,7 @@ function renderMeetingListForMonth(){
     b.onclick = async ()=>{
       if(!confirm('确定删除这场会议吗？')) return;
       state.meetings = (state.meetings||[]).filter(m=>m.id!==b.dataset.id);
-      await saveAll();
+      await queueSave();
       renderMeetingCalendar(); renderMeetingListForMonth();
     };
   });
@@ -1039,7 +1102,7 @@ function openMeetingDayPanel(key){
     b.onclick = async ()=>{
       if(!confirm('确定删除这场会议吗？')) return;
       state.meetings = (state.meetings||[]).filter(m=>m.id!==b.dataset.id);
-      await saveAll();
+      await queueSave();
       closePanel(); renderMeetingCalendar(); renderMeetingListForMonth();
     };
   });
@@ -1069,7 +1132,7 @@ function openMeetingForm(presetDate){
     if(!date || !title){ alert('日期和会议名称不能为空'); return; }
     state.meetings = state.meetings || [];
     state.meetings.push({ id: 'mt_'+Date.now(), date, time, title, summary });
-    await saveAll();
+    await queueSave();
     closePanel();
     renderMeetingCalendar(); renderMeetingListForMonth();
   };
@@ -1365,7 +1428,7 @@ function renderNameContest(body){
     if(!name){ alert('至少写个名字吧'); return; }
     state.nameProposals = state.nameProposals || [];
     state.nameProposals.push({ id:'np_'+Date.now(), name, reason, authorIdx: state.identity, ts: Date.now(), reactions:{like:[],consider:[],meh:[]} });
-    await saveAll();
+    await queueSave();
     renderNameContest(body);
   };
   const npList = document.getElementById('npList');
@@ -1400,7 +1463,7 @@ function renderNameContest(body){
       });
       const already = btn.classList.contains('active');
       if(!already){ np.reactions[r] = np.reactions[r]||[]; np.reactions[r].push(state.identity); }
-      await saveAll();
+      await queueSave();
       renderNameContest(body);
     };
   });
@@ -1465,7 +1528,7 @@ function renderComposer(){
     state.posts.unshift(post);
     // 给除了发帖人以外的所有人发一条"有新帖子"的提醒
     allPeople().forEach(p=>{ addNotif(p.id, 'new_post', state.identity, post.id); });
-    await saveAll();
+    await queueSave();
     renderComposer();
     renderPostList();
     renderNotifBell();
@@ -1490,7 +1553,7 @@ function renderPostList(){
         post.likes.push(state.identity);
         addNotif(post.authorIdx, 'like', state.identity, post.id);
       }
-      await saveAll();
+      await queueSave();
       renderPostList();
     };
   });
@@ -1498,7 +1561,7 @@ function renderPostList(){
     b.onclick = async ()=>{
       if(!confirm('确定删除这条内容吗？')) return;
       state.posts = state.posts.filter(x=>x.id!==b.dataset.id);
-      await saveAll();
+      await queueSave();
       renderPostList();
     };
   });
@@ -1516,7 +1579,7 @@ function renderPostList(){
       if(replyTarget!==undefined && replyTarget!=='' && String(replyTarget)!==String(post.authorIdx)){
         addNotif(replyTarget, 'reply', state.identity, post.id, text.slice(0,30));
       }
-      await saveAll();
+      await queueSave();
       renderPostList();
     };
   });
@@ -1535,7 +1598,7 @@ function renderPostList(){
       const post = state.posts.find(x=>x.id===b.dataset.post);
       if(!post) return;
       post.comments.splice(+b.dataset.ci, 1);
-      await saveAll();
+      await queueSave();
       renderPostList();
     };
   });
@@ -1639,7 +1702,7 @@ function renderBoardSection(container, personId, editable){
         try{
           const src = await fileToResizedDataURL(file, 480, 0.72);
           board.elements.push({ id:'el_'+Date.now(), type:'image', src, x:50, y:50, rot:0, scale:1, z: nextZ(board) });
-          await saveAll();
+          await queueSave();
           paint();
         }catch(err){ alert('图片处理失败：' + err.message); }
       });
@@ -1680,7 +1743,7 @@ function renderBoardSection(container, personId, editable){
         node.classList.remove('dragging');
         if(moved && node._pendingX!==undefined){
           el.x = node._pendingX; el.y = node._pendingY;
-          await saveAll();
+          await queueSave();
           paint();
         }else if(!moved){
           selectedId = (selectedId===id ? null : id);
@@ -1705,11 +1768,11 @@ function renderBoardSection(container, personId, editable){
           <button type="button" data-a="del" title="删除">🗑</button>
         `;
         frame.appendChild(tb);
-        tb.querySelector('[data-a="rl"]').onclick = async ()=>{ el.rot=(el.rot||0)-15; await saveAll(); paint(); };
-        tb.querySelector('[data-a="rr"]').onclick = async ()=>{ el.rot=(el.rot||0)+15; await saveAll(); paint(); };
-        tb.querySelector('[data-a="sd"]').onclick = async ()=>{ el.scale=Math.max(0.3,(el.scale||1)-0.1); await saveAll(); paint(); };
-        tb.querySelector('[data-a="su"]').onclick = async ()=>{ el.scale=Math.min(2.5,(el.scale||1)+0.1); await saveAll(); paint(); };
-        tb.querySelector('[data-a="del"]').onclick = async ()=>{ board.elements = board.elements.filter(e=>e.id!==selectedId); selectedId=null; await saveAll(); paint(); };
+        tb.querySelector('[data-a="rl"]').onclick = async ()=>{ el.rot=(el.rot||0)-15; await queueSave(); paint(); };
+        tb.querySelector('[data-a="rr"]').onclick = async ()=>{ el.rot=(el.rot||0)+15; await queueSave(); paint(); };
+        tb.querySelector('[data-a="sd"]').onclick = async ()=>{ el.scale=Math.max(0.3,(el.scale||1)-0.1); await queueSave(); paint(); };
+        tb.querySelector('[data-a="su"]').onclick = async ()=>{ el.scale=Math.min(2.5,(el.scale||1)+0.1); await queueSave(); paint(); };
+        tb.querySelector('[data-a="del"]').onclick = async ()=>{ board.elements = board.elements.filter(e=>e.id!==selectedId); selectedId=null; await queueSave(); paint(); };
       }
     }
   }
@@ -1724,7 +1787,7 @@ function renderBoardSection(container, personId, editable){
     panel.querySelectorAll('.sticker-palette button').forEach(b=>{
       b.onclick = async ()=>{
         board.elements.push({ id:'el_'+Date.now(), type:'sticker', text:b.dataset.s, x:50, y:50, rot:0, scale:1, fontSize:44, z: nextZ(board) });
-        await saveAll();
+        await queueSave();
         closePanel();
         paint();
       };
@@ -1749,7 +1812,7 @@ function renderBoardSection(container, personId, editable){
       const text = document.getElementById('boardTextInput').value.trim();
       if(!text) return;
       board.elements.push({ id:'el_'+Date.now(), type:'text', text, color: chosenColor, x:50, y:50, rot:0, scale:1, fontSize:16, z: nextZ(board) });
-      await saveAll();
+      await queueSave();
       closePanel();
       paint();
     };
@@ -1807,7 +1870,7 @@ function renderBoardSection(container, personId, editable){
       // 直接存成板子自己的涂鸦图层，不是一个可以拖拽的贴图元素
       board.doodle = canvas.toDataURL('image/png');
       doodleMode = false;
-      await saveAll();
+      await queueSave();
       paint();
     };
   }
@@ -1932,7 +1995,7 @@ function renderMyProfile(body, target){
     if(np!==np2){ alert('两次新密码不一致'); return; }
     state.credentials = state.credentials || {};
     state.credentials[i] = np;
-    await saveAll();
+    await queueSave();
     alert('密码已修改，记得记住新密码');
     document.getElementById('curPwd').value = '';
     document.getElementById('newPwd').value = '';
@@ -1978,7 +2041,7 @@ function renderMyProfile(body, target){
       bio: document.getElementById('pfBio').value.trim(),
       avatar: pendingAvatar || prof.avatar || null
     };
-    await saveAll();
+    await queueSave();
     alert('已保存');
     renderProfileTab(target);
   };
@@ -1998,13 +2061,13 @@ function openTitleEditor(idx){
   overlay.classList.add('show');
   document.getElementById('clearTitleBtn').onclick = async ()=>{
     mem.instrument = '';
-    await saveAll();
+    await queueSave();
     closePanel();
     renderActiveTab();
   };
   document.getElementById('saveTitleBtn').onclick = async ()=>{
     mem.instrument = document.getElementById('titleInput').value.trim();
-    await saveAll();
+    await queueSave();
     closePanel();
     renderActiveTab();
   };
@@ -2056,15 +2119,15 @@ function renderFriendProfile(target, idx){
   markMessagesRead(idx);
   renderChatThread(idx);
   renderBoardSection(document.getElementById('boardContainer'), idx, false);
-  const sendMsg = async ()=>{
+  const sendMsg = ()=>{
     const input = document.getElementById('chatInput');
     const text = input.value.trim();
     if(!text) return;
     state.messages = state.messages || [];
     state.messages.push({ id:'msg_'+Date.now(), from: state.identity, to: idx, text, ts: Date.now(), read:false });
     input.value = '';
-    await saveAll();
-    renderChatThread(idx);
+    renderChatThread(idx); // 先立刻显示，不等网络
+    queueSave(); // 保存放到后台排队执行，不阻塞输入下一条
   };
   document.getElementById('chatSend').onclick = sendMsg;
   document.getElementById('chatInput').addEventListener('keydown', ev=>{ if(ev.key==='Enter') sendMsg(); });
@@ -2075,7 +2138,7 @@ async function markMessagesRead(otherId){
   (state.messages||[]).forEach(m=>{
     if(String(m.to)===String(state.identity) && String(m.from)===String(otherId) && !m.read){ m.read = true; changed = true; }
   });
-  if(changed) await saveAll();
+  if(changed) await queueSave();
 }
 
 function renderChatThread(otherId){
