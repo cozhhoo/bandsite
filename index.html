@@ -103,6 +103,7 @@ Resources:`;for(let t of c){if(!t||typeof t!=`string`)throw Error(`@supabase/aut
   .stem::before{content:'';position:absolute;left:0;right:0;top:50%;height:2px;background:var(--line);transform:translateY(-1px);z-index:0;}
   .leaf{position:relative;z-index:1;width:13px;height:13px;border-radius:0% 100% 0% 100%;transform:rotate(45deg);margin-right:6px;flex:0 0 auto;background:var(--leaf-light);transition:.12s;}
   .leaf.filled{box-shadow:0 0 0 1px rgba(0,0,0,0.02);}
+  .leaf.frozen{background:#8FB8D9;box-shadow:0 0 0 1px rgba(255,255,255,0.4) inset;}
   .leaf.weekend-mark{width:6px;height:6px;border-radius:50%;transform:none;background:var(--rest);margin:0 6px;}
   .leaf.future{background:transparent;border:1.5px dashed var(--line);}
   .setup-card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:28px;max-width:600px;margin:40px auto;}
@@ -332,6 +333,9 @@ let state = {
   nameProposals: [],      // 征集团体名字：[{id, name, reason, authorIdx, ts, reactions:{like:[],consider:[],meh:[]}}]
   profileSub: 'me',       // 个人tab子页：'me' | 'friends'
   memoriesSub: 'feed',    // 回忆tab子页：'feed' | 'contest'
+  freezeTokens: {},       // 冰冻药剂余量：{ personIdx: number }，每人默认3个
+  frozenDays: {},         // 已经被冰冻保护过的具体日期：{ personIdx: [dateKey,...] }
+  freezeAwardMark: {},    // 已经奖励到的连续打卡天数刻度：{ personIdx: number }
   activeMonth: 0,
   activeTab: null,        // null = 首页, 'schedule' | 'memories' | 'profile'
   scheduleSub: 'checkin', // 'checkin' | 'meeting'
@@ -503,6 +507,9 @@ function applyRemoteData(data){
   state.notifications = data.notifications || [];
   state.announcement = data.announcement || '';
   state.nameProposals = data.nameProposals || [];
+  state.freezeTokens = data.freezeTokens || {};
+  state.frozenDays = data.frozenDays || {};
+  state.freezeAwardMark = data.freezeAwardMark || {};
 }
 
 function startRealtimeSync(){
@@ -544,7 +551,7 @@ async function loadAll(){
     return;
   }
   if(!data){
-    data = { members: PRESET_MEMBERS, checkins: {}, meetings: [], posts: [], profiles: {}, guests: [], credentials: {}, messages: [], boards: {}, bandBanner: null, notifications: [], announcement: '', nameProposals: [] };
+    data = { members: PRESET_MEMBERS, checkins: {}, meetings: [], posts: [], profiles: {}, guests: [], credentials: {}, messages: [], boards: {}, bandBanner: null, notifications: [], announcement: '', nameProposals: [], freezeTokens: {}, frozenDays: {}, freezeAwardMark: {} };
     try{ await remoteSet(data); }
     catch(e2){
       renderErrorScreen('初始化云端数据失败：' + e2.message);
@@ -564,6 +571,9 @@ async function loadAll(){
   state.notifications = data.notifications || [];
   state.announcement = data.announcement || '';
   state.nameProposals = data.nameProposals || [];
+  state.freezeTokens = data.freezeTokens || {};
+  state.frozenDays = data.frozenDays || {};
+  state.freezeAwardMark = data.freezeAwardMark || {};
   state.identity = loadIdentity();
   startRealtimeSync();
   renderRoot();
@@ -586,6 +596,9 @@ async function pullLatest(){
       state.notifications = data.notifications || [];
       state.announcement = data.announcement || '';
       state.nameProposals = data.nameProposals || [];
+      state.freezeTokens = data.freezeTokens || {};
+      state.frozenDays = data.frozenDays || {};
+      state.freezeAwardMark = data.freezeAwardMark || {};
     }
   }catch(e){ /* 拉取失败就先用本地已有数据 */ }
 }
@@ -605,13 +618,16 @@ async function saveAll(){
       bandBanner: state.bandBanner,
       notifications: state.notifications,
       announcement: state.announcement,
-      nameProposals: state.nameProposals
+      nameProposals: state.nameProposals,
+      freezeTokens: state.freezeTokens,
+      frozenDays: state.frozenDays,
+      freezeAwardMark: state.freezeAwardMark
     });
   }catch(e){
     alert('保存失败：' + e.message + '\n请检查网络，或稍后重试一次。');
   }
 }
-const saveCheckins = saveAll; // 兼容旧函数名
+const saveCheckins = queueSave; // 兼容旧函数名，且必须走排队保存，不能绕过
 
 /* 保存排队器：每次都是整份数据整体上传，短时间内连续操作（比如连发几条消息）
    会触发好几个并发的网络请求，谁先谁后完全看网络状况，慢的那个后到达
@@ -991,7 +1007,7 @@ function renderScheduleSubBody(){
       <div class="cal-card" id="calCard"></div>
       <div class="journal">
         <div class="journal-head"><h2>生长旅程</h2></div>
-        <div class="journal-note">每片叶子是一次打卡，工作日才会长叶子，小圆点代表周末休息日。</div>
+        <div class="journal-note">每片叶子是一天，现在天天都要打卡。蓝色叶子代表那天缺卡但用冰冻药剂保住了连续天数——每人起始有 3 个，连续打卡满 7 天自动再送 1 个。</div>
         <div id="journalBody"></div>
       </div>
     `;
@@ -1144,7 +1160,6 @@ function renderQuickArea(){
   const i = state.identity;
   const y=TODAY.getFullYear(), m=TODAY.getMonth(), d=TODAY.getDate();
   const key = dateKey(y,m,d);
-  const weekend = isWeekend(y,m,d);
 
   function overviewHtml(){
     const entries2 = getEntries(key);
@@ -1152,14 +1167,14 @@ function renderQuickArea(){
     let h = `<div class="overview-card">
       <div class="overview-head">
         <div class="overview-title">全员今日打卡总览</div>
-        <div class="overview-count">${weekend? '周末休息' : `<b>${doneCount}</b> / ${state.members.length} 完成`}</div>
+        <div class="overview-count"><b>${doneCount}</b> / ${state.members.length} 完成</div>
       </div>
       <div class="overview-list">`;
     state.members.forEach((m2,idx)=>{
-      const done = !weekend && entries2[idx].checked;
+      const done = entries2[idx].checked;
       h += `<div class="ov-row">
         <div class="ov-dot ${done?'done':''}" style="${done? 'background:'+MEMBER_COLORS[idx]+';':''}"></div>
-        <div class="ov-name">${m2.name}<small>${m2.instrument}${!weekend && entries2[idx].note? ' · '+entries2[idx].note : ''}</small></div>
+        <div class="ov-name">${m2.name}<small>${m2.instrument}${entries2[idx].note? ' · '+entries2[idx].note : ''}</small></div>
       </div>`;
     });
     h += `</div></div>`;
@@ -1173,41 +1188,33 @@ function renderQuickArea(){
     return;
   }
   const mem = state.members[i];
-  let html = '';
-  if(weekend){
-    html = `<div class="quick-card rest"><div class="quick-info">
-      <div class="quick-label">今天 ${key}</div><div class="quick-name">周末，好好休息 🌿</div>
-    </div></div>`;
-  }else{
-    const entries = getEntries(key);
-    const e = entries[i];
-    html = `<div class="quick-card">
-      <div class="quick-info">
-        <div class="quick-label">今天 ${key} · ${mem.instrument}</div>
-        <div class="quick-name">${mem.name}，今天练习了吗？</div>
-        <input class="quick-note-input" id="quickNote" placeholder="今天练了什么？（可留空）" value="${e.note.replace(/"/g,'&quot;')}">
-      </div>
-      <div class="quick-toggle ${e.checked?'on':''}" id="quickToggle" style="${e.checked? 'background:'+MEMBER_COLORS[i]+';':''}">${e.checked?'✓':''}</div>
-    </div>`;
-  }
+  const entries = getEntries(key);
+  const e = entries[i];
+  let html = `<div class="quick-card">
+    <div class="quick-info">
+      <div class="quick-label">今天 ${key} · ${mem.instrument}</div>
+      <div class="quick-name">${mem.name}，今天练习了吗？</div>
+      <input class="quick-note-input" id="quickNote" placeholder="今天练了什么？（可留空）" value="${e.note.replace(/"/g,'&quot;')}">
+    </div>
+    <div class="quick-toggle ${e.checked?'on':''}" id="quickToggle" style="${e.checked? 'background:'+MEMBER_COLORS[i]+';':''}">${e.checked?'✓':''}</div>
+  </div>`;
   html += overviewHtml();
   area.innerHTML = html;
-  if(!weekend){
-    document.getElementById('quickToggle').onclick = async ()=>{
-      const entries2 = getEntries(key).map(x=>({...x}));
-      entries2[i].checked = !entries2[i].checked;
-      entries2[i].note = document.getElementById('quickNote').value;
-      state.checkins[key] = entries2;
-      await saveCheckins();
-      renderQuickArea(); renderCalendar(); renderJournal();
-    };
-    document.getElementById('quickNote').addEventListener('change', async (ev)=>{
-      const entries2 = getEntries(key).map(x=>({...x}));
-      entries2[i].note = ev.target.value;
-      state.checkins[key] = entries2;
-      await saveCheckins();
-    });
-  }
+  document.getElementById('quickToggle').onclick = ()=>{
+    const entries2 = getEntries(key).map(x=>({...x}));
+    entries2[i].checked = !entries2[i].checked;
+    entries2[i].note = document.getElementById('quickNote').value;
+    state.checkins[key] = entries2;
+    // 先立刻显示打卡结果，保存放到后台排队，不用等网络、不会"点了没反应"
+    renderQuickArea(); renderCalendar(); renderJournal();
+    queueSave();
+  };
+  document.getElementById('quickNote').addEventListener('change', (ev)=>{
+    const entries2 = getEntries(key).map(x=>({...x}));
+    entries2[i].note = ev.target.value;
+    state.checkins[key] = entries2;
+    queueSave();
+  });
 }
 
 function renderCalendar(){
@@ -1219,26 +1226,22 @@ function renderCalendar(){
   DOW.forEach(d=> html += `<div class="cal-dow">周${d}</div>`);
   for(let i=0;i<firstDow;i++) html += `<div class="cal-cell pad"></div>`;
   for(let d=1; d<=daysInMonth; d++){
-    const weekend = isWeekend(y,m,d);
     const key = dateKey(y,m,d);
     const isToday = sameDate(new Date(y,m,d), TODAY);
-    let cls = 'cal-cell' + (weekend?' weekend':'') + (isToday?' today':'');
+    let cls = 'cal-cell' + (isToday?' today':'');
     html += `<div class="${cls}" data-key="${key}"><div class="cal-date">${d}</div>`;
-    if(weekend){ html += `<div class="rest-tag">休息</div>`; }
-    else{
-      const entries = getEntries(key);
-      html += `<div class="badges">`;
-      state.members.forEach((mem,i)=>{
-        const done = entries[i] && entries[i].checked;
-        html += `<div class="badge ${done?'done':''}" title="${mem.name}" style="${done?'background:'+MEMBER_COLORS[i]+';':''}">${mem.name[0]||''}</div>`;
-      });
-      html += `</div>`;
-    }
+    const entries = getEntries(key);
+    html += `<div class="badges">`;
+    state.members.forEach((mem,i)=>{
+      const done = entries[i] && entries[i].checked;
+      html += `<div class="badge ${done?'done':''}" title="${mem.name}" style="${done?'background:'+MEMBER_COLORS[i]+';':''}">${mem.name[0]||''}</div>`;
+    });
+    html += `</div>`;
     html += `</div>`;
   }
   html += `</div>`;
   card.innerHTML = html;
-  card.querySelectorAll('.cal-cell:not(.weekend):not(.pad)').forEach(cell=>{
+  card.querySelectorAll('.cal-cell:not(.pad)').forEach(cell=>{
     cell.onclick = ()=> openDayPanel(cell.dataset.key);
   });
 }
@@ -1275,7 +1278,7 @@ function openDayPanel(key){
 
   const mem = state.members[i];
   const e = entries[i];
-  let html = `<h2>${y}年${m}月${d}日</h2><div class="sub">周${weekdayLabel} · 工作日打卡</div>`;
+  let html = `<h2>${y}年${m}月${d}日</h2><div class="sub">周${weekdayLabel} · 轻点一下圆圈就能打卡，会立刻保存</div>`;
   html += `<div class="member-row">
     <div class="check-circle ${e.checked?'on':''}" data-idx="${i}" style="${e.checked?'background:'+MEMBER_COLORS[i]+';':''}">${e.checked?'✓':''}</div>
     <div class="member-info">
@@ -1298,28 +1301,30 @@ function openDayPanel(key){
       </div>`;
     });
   }
-  html += `<div class="panel-actions"><button class="btn btn-ghost" id="cancelBtn">取消</button><button class="btn btn-primary" id="saveBtn">保存</button></div>`;
+  html += `<div class="panel-actions"><button class="btn btn-primary" id="cancelBtn" style="flex:1;">关闭</button></div>`;
   panel.innerHTML = html;
   overlay.classList.add('show');
-  panel.querySelectorAll('.check-circle[data-idx]').forEach(c=>{
-    c.onclick = ()=>{
-      const idx = +c.dataset.idx;
-      entries[idx].checked = !entries[idx].checked;
-      c.classList.toggle('on');
-      c.style.background = entries[idx].checked ? MEMBER_COLORS[idx] : '';
-      c.textContent = entries[idx].checked ? '✓' : '';
-    };
-  });
+
+  function commitOwnEntry(){
+    state.checkins[key] = entries;
+    queueSave();
+    renderCalendar(); renderJournal(); renderQuickArea();
+  }
+  panel.querySelector('.check-circle[data-idx]').onclick = (ev)=>{
+    const c = ev.currentTarget;
+    entries[i].checked = !entries[i].checked;
+    c.classList.toggle('on');
+    c.style.background = entries[i].checked ? MEMBER_COLORS[i] : '';
+    c.textContent = entries[i].checked ? '✓' : '';
+    commitOwnEntry(); // 点一下立刻保存，不用再点"保存"按钮
+  };
   panel.querySelectorAll('.note-input').forEach(inp=>{
-    inp.oninput = ()=>{ entries[+inp.dataset.idx].note = inp.value; };
+    inp.addEventListener('change', ()=>{
+      entries[+inp.dataset.idx].note = inp.value;
+      commitOwnEntry();
+    });
   });
   document.getElementById('cancelBtn').onclick = closePanel;
-  document.getElementById('saveBtn').onclick = async ()=>{
-    state.checkins[key] = entries;
-    await saveCheckins();
-    closePanel();
-    renderCalendar(); renderJournal(); renderQuickArea();
-  };
 }
 function closePanel(){ document.getElementById('overlay').classList.remove('show'); }
 document.getElementById('overlay').addEventListener('click', e=>{ if(e.target.id==='overlay') closePanel(); });
@@ -1329,10 +1334,8 @@ function allWeekdayKeysUpToToday(){
   MONTHS.forEach(({y,m})=>{
     const days = new Date(y,m+1,0).getDate();
     for(let d=1; d<=days; d++){
-      if(!isWeekend(y,m,d)){
-        const dt = new Date(y,m,d);
-        if(dt <= TODAY) keys.push(dateKey(y,m,d));
-      }
+      const dt = new Date(y,m,d);
+      if(dt <= TODAY) keys.push(dateKey(y,m,d));
     }
   });
   return keys;
@@ -1345,42 +1348,92 @@ function totalCheckinCount(idx){
   return total;
 }
 
+/* ---- 冰冻药剂：连续打卡7天自动获得一个，缺卡时自动用来保住连续天数 ---- */
+function getFreezeTokenCount(idx){
+  return state.freezeTokens[idx] !== undefined ? state.freezeTokens[idx] : 3;
+}
+
+function computeStreakInfo(idx){
+  const pastKeys = allWeekdayKeysUpToToday(); // 已按日期升序排列，到今天为止
+  state.frozenDays[idx] = state.frozenDays[idx] || [];
+  if(state.freezeTokens[idx] === undefined) state.freezeTokens[idx] = 3;
+  let changed = false;
+
+  // 真实连续打卡天数（不算冰冻），用来判断要不要发新的冰冻药剂
+  let raw = 0, rawBroken = false;
+  for(let k=pastKeys.length-1;k>=0;k--){
+    const e = getEntries(pastKeys[k])[idx];
+    if(!rawBroken){
+      if(e.checked) raw++;
+      else rawBroken = true;
+    }else break;
+  }
+  const mark = state.freezeAwardMark[idx] || 0;
+  if(raw>0 && raw % 7 === 0 && raw > mark){
+    state.freezeTokens[idx] = getFreezeTokenCount(idx) + 1;
+    state.freezeAwardMark[idx] = raw;
+    changed = true;
+  }
+
+  // 冰冻保护后的连续天数（用来展示"连续N天"，缺卡时如果还有药剂会自动消耗保住streak）
+  let streak = 0, streakBroken = false;
+  for(let k=pastKeys.length-1;k>=0;k--){
+    if(streakBroken) break;
+    const key = pastKeys[k];
+    const e = getEntries(key)[idx];
+    if(e.checked){
+      streak++;
+    }else if(state.frozenDays[idx].includes(key)){
+      streak++;
+    }else if(getFreezeTokenCount(idx) > 0){
+      state.frozenDays[idx].push(key);
+      state.freezeTokens[idx] = getFreezeTokenCount(idx) - 1;
+      changed = true;
+      streak++;
+    }else{
+      streakBroken = true;
+    }
+  }
+
+  return { streak, tokens: getFreezeTokenCount(idx), changed };
+}
+
 function renderJournal(){
   const body = document.getElementById('journalBody');
   const pastKeys = allWeekdayKeysUpToToday();
   let html = '';
+  let anyChanged = false;
   state.members.forEach((mem,i)=>{
-    let total=0, streak=0, streakBroken=false;
-    for(let k=pastKeys.length-1;k>=0;k--){
-      const e = getEntries(pastKeys[k])[i];
-      if(e.checked){ total++; if(!streakBroken) streak++; }
-      else{ streakBroken = true; }
-    }
+    let total = 0;
+    pastKeys.forEach(k=>{ if(getEntries(k)[i].checked) total++; });
+    const info = computeStreakInfo(i);
+    if(info.changed) anyChanged = true;
     html += `<div class="vine-row">
       <div class="vine-id">
         <div class="vine-name" style="color:${MEMBER_COLORS[i]}">${mem.name}</div>
         <div class="vine-inst">${mem.instrument}</div>
-        <div class="vine-stats"><b>${total}</b> 次 · 连续 <b>${streak}</b> 天</div>
+        <div class="vine-stats"><b>${total}</b> 次 · 连续 <b>${info.streak}</b> 天 · 🧊×${info.tokens}</div>
       </div>
       <div class="stem-wrap"><div class="stem">`;
     MONTHS.forEach(({y,m})=>{
       const days = new Date(y,m+1,0).getDate();
       for(let d=1; d<=days; d++){
         const dt = new Date(y,m,d);
-        if(isWeekend(y,m,d)){ html += `<div class="leaf weekend-mark" title="周末休息"></div>`; }
+        const key = dateKey(y,m,d);
+        if(dt > TODAY){ html += `<div class="leaf future" title="${key}"></div>`; }
         else{
-          const key = dateKey(y,m,d);
-          if(dt > TODAY){ html += `<div class="leaf future" title="${key}"></div>`; }
-          else{
-            const e = getEntries(key)[i];
-            html += `<div class="leaf ${e.checked?'filled':''}" style="${e.checked?'background:'+MEMBER_COLORS[i]+';':''}" title="${key}${e.note?' · '+e.note:''}"></div>`;
-          }
+          const e = getEntries(key)[i];
+          const frozen = !e.checked && (state.frozenDays[i]||[]).includes(key);
+          const cls = e.checked? 'filled' : (frozen? 'frozen' : '');
+          const bg = e.checked? 'background:'+MEMBER_COLORS[i]+';' : '';
+          html += `<div class="leaf ${cls}" style="${bg}" title="${key}${e.note?' · '+e.note:''}${frozen?'（用冰冻药剂保护）':''}"></div>`;
         }
       }
     });
     html += `</div></div></div>`;
   });
   body.innerHTML = html;
+  if(anyChanged) queueSave(); // 新发放或消耗了冰冻药剂，同步保存
 }
 
 /* ---------------- 回忆：发帖 / 照片 / 分享 / 点赞评论 ---------------- */
