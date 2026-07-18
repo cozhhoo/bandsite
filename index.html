@@ -598,6 +598,12 @@ function startRealtimeSync(){
       .channel('band-site-sync')
       .on('postgres_changes', { event: 'UPDATE', schema: 'public', table: 'checkin', filter: 'date=eq.main_data' }, (payload)=>{
         if(!payload.new || !payload.new.data) return;
+        if(saveInFlight){
+          // 本地正好有改动在排队保存（比如刚点了取消打卡/代打卡），这时候不能拿服务器的旧快照
+          // 覆盖回来，不然会把还没保存成功的改动又悄悄改回原样——这正是"打卡取消不了"的真正原因。
+          // 等本地这一轮保存跑完，我们自己的最新结果自然会广播出去，到时候再同步。
+          return;
+        }
         applyRemoteData(payload.new.data);
         renderNotifBell();
         // 只刷新当前正在看的那一小块界面，不做整页重绘，避免打断正在输入的内容
