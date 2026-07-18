@@ -66,8 +66,14 @@ Resources:`;for(let t of c){if(!t||typeof t!=`string`)throw Error(`@supabase/aut
   .cal-date{font-family:'Space Grotesk',sans-serif;font-size:12.5px;font-weight:500;color:var(--ink-soft);}
   .cal-cell.weekend .cal-date{color:#7a7261;}
   .badges{display:grid;grid-template-columns:repeat(3,1fr);gap:3px;margin-top:8px;}
-  .badge{width:16px;height:16px;border-radius:50%;border:1.5px solid var(--leaf-light);display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;color:transparent;font-family:'Space Grotesk',sans-serif;}
+  .badge{position:relative;width:16px;height:16px;border-radius:50%;border:1.5px solid var(--leaf-light);display:flex;align-items:center;justify-content:center;font-size:8px;font-weight:700;color:transparent;font-family:'Space Grotesk',sans-serif;}
+  .badge.proxy::after{content:'';position:absolute;top:-2px;right:-2px;width:6px;height:6px;border-radius:50%;background:var(--amber);border:1px solid #fff;}
+  .leaf.filled.proxy{box-shadow:0 0 0 2px var(--amber);}
+  .proxy-tag{display:inline-block;font-size:10px;background:var(--amber);color:#fff;padding:1px 7px;border-radius:999px;margin-left:6px;font-weight:700;vertical-align:middle;}
   .badge.done{border-color:transparent;color:#fff;}
+  .badge.proxied{box-shadow:0 0 0 2px var(--amber);}
+  .leaf.filled.proxied{box-shadow:0 0 0 2px var(--amber);}
+  .proxied-tag{display:inline-block;font-size:10px;font-weight:700;color:var(--amber);background:#FDF0E0;border-radius:999px;padding:1px 7px;margin-left:4px;vertical-align:middle;}
   .overlay{position:fixed;inset:0;background:rgba(34,51,40,.35);display:none;align-items:center;justify-content:center;padding:20px;z-index:100;}
   .overlay.show{display:flex;}
   .panel{background:var(--card);border-radius:18px;max-width:440px;width:100%;max-height:86vh;overflow-y:auto;padding:22px;border:1px solid var(--line);}
@@ -388,7 +394,7 @@ const PRESET_MEMBERS = [
   {name:'杉菜', instrument:'木吉他'},
   {name:'包菜', instrument:'架子鼓'},
   {name:'柜子羊', instrument:'电吉他'},
-  {name:'严格上帝', instrument:'键盘'}
+  {name:'管理员', instrument:'键盘'}
 ];
 
 let state = {
@@ -403,7 +409,7 @@ let state = {
   boards: {},             // 个人展示墙：{ [personId]: { elements:[...] } }
   bandBanner: null,       // 首页乐队形象图（dataURL）
   notifications: [],      // 通知：[{id, to, type, fromId, postId, extra, ts, read}]
-  announcement: '',       // 首页练习公告，只有严格上帝能编辑
+  announcement: '',       // 首页练习公告，只有管理员能编辑
   nameProposals: [],      // 征集团体名字：[{id, name, reason, authorIdx, ts, reactions:{like:[],consider:[],meh:[]}}]
   profileSub: 'me',       // 个人tab子页：'me' | 'friends'
   memoriesSub: 'feed',    // 回忆tab子页：'feed' | 'contest'
@@ -417,7 +423,7 @@ let state = {
   identity: undefined
 };
 
-const ADMIN_INDEX = 5;      // 严格上帝 的初始下标（改名后权限仍跟着这个位置走）
+const ADMIN_INDEX = 5;      // 管理员 的初始下标（改名后权限仍跟着这个位置走）
 const SCHEDULER_INDEX = 1;  // 小鱼 的初始下标
 const DEFAULT_PASSWORD = 'pgdpg402';
 function isAdmin(){ return state.identity === ADMIN_INDEX; }
@@ -513,7 +519,7 @@ function pad(n){ return n<10? '0'+n : ''+n; }
 function dateKey(y,m,d){ return `${y}-${pad(m+1)}-${pad(d)}`; }
 function isWeekend(y,m,d){ const day=new Date(y,m,d).getDay(); return day===0||day===6; }
 function sameDate(a,b){ return a.getFullYear()===b.getFullYear()&&a.getMonth()===b.getMonth()&&a.getDate()===b.getDate(); }
-function emptyEntries(){ return Array.from({length:6}, ()=>({checked:false, note:''})); }
+function emptyEntries(){ return Array.from({length:6}, ()=>({checked:false, note:'', proxied:false})); }
 function getEntries(key){ return state.checkins[key] ? state.checkins[key] : emptyEntries(); }
 
 /* 把图片压缩成一个不太大的 base64，直接存进数据库，不依赖额外的图片存储服务 */
@@ -1320,7 +1326,8 @@ function renderCalendar(){
     html += `<div class="badges">`;
     state.members.forEach((mem,i)=>{
       const done = entries[i] && entries[i].checked;
-      html += `<div class="badge ${done?'done':''}" title="${mem.name}" style="${done?'background:'+getPersonColor(i)+';':''}">${mem.name[0]||''}</div>`;
+      const proxied = done && entries[i].proxied;
+      html += `<div class="badge ${done?'done':''} ${proxied?'proxied':''}" title="${mem.name}${proxied?'（管理员代打卡）':''}" style="${done?'background:'+getPersonColor(i)+';':''}">${mem.name[0]||''}</div>`;
     });
     html += `</div>`;
     html += `</div>`;
@@ -1341,16 +1348,19 @@ function openDayPanel(key){
   const i = state.identity;
   const todayKey = dateKey(TODAY.getFullYear(), TODAY.getMonth(), TODAY.getDate());
   const isToday = key === todayKey;
+  const isPast = key < todayKey;
+  const adminProxyMode = isAdmin() && isPast; // 管理员代打卡：只能是今天以前的日期
 
-  if(isGuestIdentity(i) || !isToday){
+  if(isGuestIdentity(i) || (!isToday && !adminProxyMode)){
     const subText = isGuestIdentity(i) ? '游客查看（不可编辑）' : '只能在当天打卡，这天只能查看';
     let gHtml = `<h2>${y}年${m}月${d}日</h2><div class="sub">周${weekdayLabel} · ${subText}</div>`;
     state.members.forEach((m2,idx)=>{
       const e2 = entries[idx];
+      const proxied2 = e2.checked && e2.proxied;
       gHtml += `<div class="member-row">
         <div class="check-circle ${e2.checked?'on':''}" style="${e2.checked?'background:'+getPersonColor(idx)+';':''}cursor:default;">${e2.checked?'✓':''}</div>
         <div class="member-info">
-          <div class="member-name">${m2.name}</div>
+          <div class="member-name">${m2.name}${proxied2? ' <span class="proxied-tag">🛡️ 管理员代打卡</span>' : ''}</div>
           <div class="member-inst">${m2.instrument}${e2.note? ' · '+e2.note : ''}</div>
         </div>
       </div>`;
@@ -1358,6 +1368,49 @@ function openDayPanel(key){
     gHtml += `<div class="panel-actions"><button class="btn btn-primary" id="cancelBtn" style="flex:1;">关闭</button></div>`;
     panel.innerHTML = gHtml;
     overlay.classList.add('show');
+    document.getElementById('cancelBtn').onclick = closePanel;
+    return;
+  }
+
+  if(adminProxyMode){
+    // 管理员代打卡模式：可以编辑这一天所有人的记录，但仅限今天以前的日期
+    let html2 = `<h2>${y}年${m}月${d}日</h2><div class="sub">周${weekdayLabel} · 🛡️ 管理员代打卡，点圆圈立刻保存</div>`;
+    state.members.forEach((m2,idx)=>{
+      const e2 = entries[idx];
+      html2 += `<div class="member-row">
+        <div class="check-circle ${e2.checked?'on':''}" data-idx="${idx}" style="${e2.checked?'background:'+getPersonColor(idx)+';':''}">${e2.checked?'✓':''}</div>
+        <div class="member-info">
+          <div class="member-name">${m2.name}</div>
+          <div class="member-inst">${m2.instrument}</div>
+          <input class="note-input" data-idx="${idx}" placeholder="${m2.name}那天练了什么？（可留空）" value="${e2.note.replace(/"/g,'&quot;')}">
+        </div>
+      </div>`;
+    });
+    html2 += `<div class="panel-actions"><button class="btn btn-primary" id="cancelBtn" style="flex:1;">关闭</button></div>`;
+    panel.innerHTML = html2;
+    overlay.classList.add('show');
+    function commitProxy(){
+      state.checkins[key] = entries;
+      queueSave();
+      renderCalendar(); renderJournal(); renderQuickArea();
+    }
+    panel.querySelectorAll('.check-circle[data-idx]').forEach(c=>{
+      c.onclick = ()=>{
+        const idx = +c.dataset.idx;
+        entries[idx].checked = !entries[idx].checked;
+        entries[idx].proxied = entries[idx].checked; // 打上"管理员代打卡"标记，取消勾选就去掉标记
+        c.classList.toggle('on');
+        c.style.background = entries[idx].checked ? getPersonColor(idx) : '';
+        c.textContent = entries[idx].checked ? '✓' : '';
+        commitProxy();
+      };
+    });
+    panel.querySelectorAll('.note-input').forEach(inp=>{
+      inp.addEventListener('change', ()=>{
+        entries[+inp.dataset.idx].note = inp.value;
+        commitProxy();
+      });
+    });
     document.getElementById('cancelBtn').onclick = closePanel;
     return;
   }
@@ -1549,9 +1602,10 @@ function renderJournal(){
         else{
           const e = getEntries(key)[i];
           const frozen = !e.checked && (state.frozenDays[i]||[]).includes(key);
-          const cls = e.checked? 'filled' : (frozen? 'frozen' : '');
+          const proxied = e.checked && e.proxied;
+          const cls = e.checked? ('filled' + (proxied?' proxied':'')) : (frozen? 'frozen' : '');
           const bg = e.checked? 'background:'+getPersonColor(i)+';' : '';
-          html += `<div class="leaf ${cls}" style="${bg}" title="${key}${e.note?' · '+e.note:''}${frozen?'（用冰冻药剂保护）':''}"></div>`;
+          html += `<div class="leaf ${cls}" style="${bg}" title="${key}${e.note?' · '+e.note:''}${frozen?'（用冰冻药剂保护）':''}${proxied?'（管理员代打卡）':''}"></div>`;
         }
       }
     });
