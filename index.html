@@ -2411,6 +2411,7 @@ function renderFriendProfile(target, idx){
         <div class="field-block" style="grid-column:1/-1;"><label>兴趣爱好</label><div>${escapeHtml(prof.interests || '未填写')}</div></div>
         <div class="field-block" style="grid-column:1/-1;"><label>个性签名</label><div>${escapeHtml(prof.bio || '未填写')}</div></div>
         <div class="field-block" style="grid-column:1/-1;"><label>性别</label><div>${prof.gender || '未填写'}</div></div>
+        ${(isAdmin() && isGuestFriend) ? `<div class="field-block" style="grid-column:1/-1;"><label>账号创建时间</label><div>${(()=>{ const g = getGuest(guestNameOf(idx)); return g && g.joinedAt ? fmtTime(g.joinedAt) : '未知'; })()}</div></div>` : ''}
       </div>
       ${isGuestFriend? '' : `<div class="profile-stat">累计打卡 <b>${total}</b> 次</div>`}
     </div>
