@@ -244,8 +244,13 @@ Resources:`;for(let t of c){if(!t||typeof t!=`string`)throw Error(`@supabase/aut
   .chat-thread{max-height:280px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding:6px 2px;}
   .chat-bubble-row{display:flex;}
   .chat-bubble-row.mine{justify-content:flex-end;}
-  .chat-bubble{background:#fff;border:1px solid var(--line);border-radius:12px;padding:8px 12px;font-size:13.5px;max-width:75%;line-height:1.5;word-break:break-word;}
+  .chat-bubble-wrap{display:flex;flex-direction:column;max-width:75%;}
+  .chat-bubble-row.mine .chat-bubble-wrap{align-items:flex-end;}
+  .chat-bubble{background:#fff;border:1px solid var(--line);border-radius:12px;padding:8px 12px;font-size:13.5px;line-height:1.5;word-break:break-word;}
   .chat-bubble-row.mine .chat-bubble{background:var(--leaf);color:#fff;border-color:var(--leaf);}
+  .chat-meta{display:flex;gap:8px;align-items:center;font-size:10.5px;color:var(--ink-soft);margin-top:2px;padding:0 2px;}
+  .chat-recall-btn{background:none;border:none;color:var(--ink-soft);text-decoration:underline;cursor:pointer;font-size:10.5px;padding:0;font-family:inherit;}
+  .chat-recall-btn:hover{color:var(--leaf);}
   .chat-input-row{display:flex;gap:8px;margin-top:10px;}
   .chat-input-row input{flex:1;border:1px solid var(--line);border-radius:8px;padding:8px 10px;font-family:inherit;font-size:13.5px;background:#fff;color:var(--ink);}
 
@@ -701,9 +706,18 @@ async function pullLatest(){
   }catch(e){ /* 拉取失败就先用本地已有数据 */ }
 }
 
+/* 给一个 promise 加超时保护：网络请求如果一直挂着不返回也不报错，
+   等太久就自动判定失败，绝不会让保存队列永远卡在"进行中"出不来 */
+function withTimeout(promise, ms, label){
+  return Promise.race([
+    promise,
+    new Promise((_, reject)=> setTimeout(()=> reject(new Error((label||'操作')+'超时（超过'+(ms/1000)+'秒无响应），请检查网络后重试')), ms))
+  ]);
+}
+
 async function saveAll(){
   try{
-    await remoteSet({
+    await withTimeout(remoteSet({
       members: state.members,
       checkins: state.checkins,
       meetings: state.meetings,
@@ -720,8 +734,9 @@ async function saveAll(){
       freezeTokens: state.freezeTokens,
       frozenDays: state.frozenDays,
       freezeAwardMark: state.freezeAwardMark
-    });
+    }), 15000, '保存');
   }catch(e){
+    console.error('保存失败', e);
     alert('保存失败：' + e.message + '\n请检查网络，或稍后重试一次。');
   }
 }
@@ -1301,6 +1316,7 @@ function renderQuickArea(){
   document.getElementById('quickToggle').onclick = ()=>{
     const entries2 = getEntries(key).map(x=>({...x}));
     entries2[i].checked = !entries2[i].checked;
+    unfreezeIfNeeded(i, key, entries2[i].checked);
     entries2[i].note = document.getElementById('quickNote').value;
     state.checkins[key] = entries2;
     // 先立刻显示打卡结果，保存放到后台排队，不用等网络、不会"点了没反应"
@@ -1405,6 +1421,7 @@ function openDayPanel(key){
         const idx = +c.dataset.idx;
         entries[idx].checked = !entries[idx].checked;
         entries[idx].proxied = entries[idx].checked; // 打上"管理员代打卡"标记，取消勾选就去掉标记
+        unfreezeIfNeeded(idx, key, entries[idx].checked);
         c.classList.toggle('on');
         c.style.background = entries[idx].checked ? getPersonColor(idx) : '';
         c.textContent = entries[idx].checked ? '✓' : '';
@@ -1458,6 +1475,7 @@ function openDayPanel(key){
   panel.querySelector('.check-circle[data-idx]').onclick = (ev)=>{
     const c = ev.currentTarget;
     entries[i].checked = !entries[i].checked;
+    unfreezeIfNeeded(i, key, entries[i].checked);
     c.classList.toggle('on');
     c.style.background = entries[i].checked ? getPersonColor(i) : '';
     c.textContent = entries[i].checked ? '✓' : '';
@@ -1498,8 +1516,21 @@ function getFreezeTokenCount(idx){
   return state.freezeTokens[idx] !== undefined ? state.freezeTokens[idx] : 3;
 }
 
+/* 取消打卡时如果这天正好是被冰冻药剂保护的，主动解除保护并退还药剂，
+   保证"取消"这个动作永远是确定生效的，不会被自动冰冻逻辑悄悄覆盖回去 */
+function unfreezeIfNeeded(idx, key, nowChecked){
+  if(nowChecked) return;
+  state.frozenDays[idx] = state.frozenDays[idx] || [];
+  const pos = state.frozenDays[idx].indexOf(key);
+  if(pos>=0){
+    state.frozenDays[idx].splice(pos,1);
+    state.freezeTokens[idx] = getFreezeTokenCount(idx) + 1;
+  }
+}
+
 function computeStreakInfo(idx){
   const pastKeys = allWeekdayKeysUpToToday(); // 已按日期升序排列，到今天为止
+  const todayKey = dateKey(TODAY.getFullYear(), TODAY.getMonth(), TODAY.getDate());
   state.frozenDays[idx] = state.frozenDays[idx] || [];
   if(state.freezeTokens[idx] === undefined) state.freezeTokens[idx] = 3;
   let changed = false;
@@ -1528,6 +1559,10 @@ function computeStreakInfo(idx){
     const e = getEntries(key)[idx];
     if(e.checked){
       streak++;
+    }else if(key === todayKey){
+      // 今天还没"过完"，缺卡也不自动冰冻——不然刚点完"取消打卡"，
+      // 下一次渲染立刻又被冰冻药剂保护回去，看起来就像取消不掉一样
+      streakBroken = true;
     }else if(state.frozenDays[idx].includes(key)){
       streak++;
     }else if(getFreezeTokenCount(idx) > 0){
@@ -2435,8 +2470,27 @@ function renderChatThread(otherId){
   }else{
     box.innerHTML = msgs.map(m=>{
       const mine = String(m.from)===String(state.identity);
-      return `<div class="chat-bubble-row ${mine?'mine':''}"><div class="chat-bubble">${escapeHtml(m.text)}</div></div>`;
+      const bubbleContent = m.recalled
+        ? `<i style="opacity:.65;">${mine? '你' : '对方'}撤回了一条消息</i>`
+        : escapeHtml(m.text);
+      const recallBtn = (mine && !m.recalled) ? `<button type="button" class="chat-recall-btn" data-id="${m.id}">撤回</button>` : '';
+      return `<div class="chat-bubble-row ${mine?'mine':''}">
+        <div class="chat-bubble-wrap">
+          <div class="chat-bubble">${bubbleContent}</div>
+          <div class="chat-meta"><span>${fmtTime(m.ts)}</span>${recallBtn}</div>
+        </div>
+      </div>`;
     }).join('');
+    box.querySelectorAll('.chat-recall-btn').forEach(b=>{
+      b.onclick = async ()=>{
+        if(!confirm('确定撤回这条消息吗？')) return;
+        const msg = (state.messages||[]).find(x=>x.id===b.dataset.id);
+        if(!msg) return;
+        msg.recalled = true;
+        await queueSave();
+        renderChatThread(otherId);
+      };
+    });
   }
   box.scrollTop = box.scrollHeight;
 }
