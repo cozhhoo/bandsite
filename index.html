@@ -175,6 +175,15 @@ Resources:`;for(let t of c){if(!t||typeof t!=`string`)throw Error(`@supabase/aut
   .meeting-body{flex:1;}
   .meeting-title{font-weight:700;font-size:14px;}
   .meeting-summary{font-size:12.5px;color:var(--ink-soft);margin-top:2px;}
+  .meeting-photo-count{font-size:11px;color:var(--leaf);margin-top:4px;font-weight:600;}
+  .mem-thumb-wrap{position:relative;margin-top:6px;border-radius:6px;overflow:hidden;height:28px;}
+  .mem-thumb{width:100%;height:100%;object-fit:cover;display:block;filter:brightness(.75);}
+  .mem-thumb-count{position:absolute;bottom:2px;right:3px;font-size:9px;color:#fff;font-weight:700;text-shadow:0 1px 2px rgba(0,0,0,.6);}
+  .trip-photo-grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(90px,1fr));gap:8px;margin-top:10px;}
+  .trip-photo-item img{width:100%;aspect-ratio:1;object-fit:cover;border-radius:8px;display:block;}
+  .trip-photo-meta{font-size:10.5px;color:var(--ink-soft);margin-top:3px;line-height:1.3;}
+  .trip-photo-meta button{background:none;border:none;color:var(--danger);cursor:pointer;font-size:10.5px;padding:0;font-family:inherit;text-decoration:underline;}
+  .trip-photo-add-row{margin-top:10px;}
   .meeting-del,.meeting-del-inline{flex:0 0 auto;}
   .composer{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-bottom:22px;}
   .composer textarea{width:100%;border:1px solid var(--line);border-radius:10px;padding:10px;font-family:inherit;font-size:14px;resize:vertical;min-height:60px;background:#fff;color:var(--ink);}
@@ -391,7 +400,18 @@ function getPersonColor(idx){
 }
 const DOW = ['一','二','三','四','五','六','日'];
 const TODAY = new Date(); // 使用真实的"今天"，每天自动更新
-const MONTHS = [ {y:2026,m:6,label:'七月 · July'}, {y:2026,m:7,label:'八月 · August'} ];
+const MONTHS = [
+  {y:2026,m:3,label:'四月 · April'},
+  {y:2026,m:4,label:'五月 · May'},
+  {y:2026,m:5,label:'六月 · June'},
+  {y:2026,m:6,label:'七月 · July'},
+  {y:2026,m:7,label:'八月 · August'},
+  {y:2026,m:8,label:'九月 · September'},
+  {y:2026,m:9,label:'十月 · October'},
+  {y:2026,m:10,label:'十一月 · November'},
+  {y:2026,m:11,label:'十二月 · December'}
+];
+function isCheckinMonth(m){ return m===6 || m===7; } // 只有七月、八月保留打卡功能
 
 const PRESET_MEMBERS = [
   {name:'坤坤', instrument:'主唱'},
@@ -421,7 +441,10 @@ let state = {
   freezeTokens: {},       // 冰冻药剂余量：{ personIdx: number }，每人默认3个
   frozenDays: {},         // 已经被冰冻保护过的具体日期：{ personIdx: [dateKey,...] }
   freezeAwardMark: {},    // 已经奖励到的连续打卡天数刻度：{ personIdx: number }
-  activeMonth: 0,
+  teambuilds: [],         // 团建行程：[{id,date,time,title,summary,photos:[]}]
+  dayMemories: {},        // 非暑期月份的共同回忆照片：{ dateKey: [{id,src,caption,authorIdx,ts}] }
+  tripSub: 'rehearsal',   // 行程子页：'rehearsal'(排练) | 'teambuild'(团建)
+  activeMonth: 3, // 默认停在七月（MONTHS里四月是0，七月是3）
   activeTab: null,        // null = 首页, 'schedule' | 'memories' | 'profile'
   scheduleSub: 'checkin', // 'checkin' | 'meeting'
   viewingFriend: null,    // 个人页里正在查看的好友 id（数字=音乐家下标，'guest:名字'=游客）
@@ -429,10 +452,12 @@ let state = {
 };
 
 const ADMIN_INDEX = 5;      // 管理员 的初始下标（改名后权限仍跟着这个位置走）
-const SCHEDULER_INDEX = 1;  // 小鱼 的初始下标
+const SCHEDULER_INDEX = 1;  // 小鱼 的初始下标，负责排练
+const TEAMBUILD_INDEX = 3;  // 包菜 的初始下标，负责团建
 const DEFAULT_PASSWORD = 'pgdpg402';
 function isAdmin(){ return state.identity === ADMIN_INDEX; }
 function canManageMeetings(){ return state.identity === SCHEDULER_INDEX; }
+function canManageTeambuild(){ return state.identity === TEAMBUILD_INDEX; }
 
 /* ---------------- 身份 / 游客 通用工具 ---------------- */
 function isGuestIdentity(id){ return typeof id==='string' && id.indexOf('guest:')===0; }
@@ -595,6 +620,8 @@ function applyRemoteData(data){
   state.freezeTokens = data.freezeTokens || {};
   state.frozenDays = data.frozenDays || {};
   state.freezeAwardMark = data.freezeAwardMark || {};
+  state.teambuilds = data.teambuilds || [];
+  state.dayMemories = data.dayMemories || {};
 }
 
 function startRealtimeSync(){
@@ -654,7 +681,7 @@ async function loadAll(){
     return;
   }
   if(!data){
-    data = { members: PRESET_MEMBERS, checkins: {}, meetings: [], posts: [], profiles: {}, guests: [], credentials: {}, messages: [], boards: {}, bandBanner: null, notifications: [], announcement: '', nameProposals: [], freezeTokens: {}, frozenDays: {}, freezeAwardMark: {} };
+    data = { members: PRESET_MEMBERS, checkins: {}, meetings: [], posts: [], profiles: {}, guests: [], credentials: {}, messages: [], boards: {}, bandBanner: null, notifications: [], announcement: '', nameProposals: [], freezeTokens: {}, frozenDays: {}, freezeAwardMark: {}, teambuilds: [], dayMemories: {} };
     try{ await remoteSet(data); }
     catch(e2){
       renderErrorScreen('初始化云端数据失败：' + e2.message);
@@ -677,6 +704,8 @@ async function loadAll(){
   state.freezeTokens = data.freezeTokens || {};
   state.frozenDays = data.frozenDays || {};
   state.freezeAwardMark = data.freezeAwardMark || {};
+  state.teambuilds = data.teambuilds || [];
+  state.dayMemories = data.dayMemories || {};
   state.identity = loadIdentity();
   startRealtimeSync();
   renderRoot();
@@ -702,6 +731,8 @@ async function pullLatest(){
       state.freezeTokens = data.freezeTokens || {};
       state.frozenDays = data.frozenDays || {};
       state.freezeAwardMark = data.freezeAwardMark || {};
+      state.teambuilds = data.teambuilds || [];
+      state.dayMemories = data.dayMemories || {};
     }
   }catch(e){ /* 拉取失败就先用本地已有数据 */ }
 }
@@ -733,7 +764,9 @@ async function saveAll(){
       nameProposals: state.nameProposals,
       freezeTokens: state.freezeTokens,
       frozenDays: state.frozenDays,
-      freezeAwardMark: state.freezeAwardMark
+      freezeAwardMark: state.freezeAwardMark,
+      teambuilds: state.teambuilds,
+      dayMemories: state.dayMemories
     }), 15000, '保存');
   }catch(e){
     console.error('保存失败', e);
@@ -830,6 +863,7 @@ function renderVisitorChoice(){
       <div class="id-grid" id="guestGrid"></div>
       <div class="section-head" style="margin-top:22px;"><h2>创建新游客账号</h2></div>
       <div class="cfg-field"><label>昵称</label><input id="newGuestName" placeholder="给自己起个名字"></div>
+      <div class="cfg-field"><label>你是谁？谁邀请你来的？</label><input id="newGuestIntro" placeholder="例如：我是坤坤的高中同学 / 杉菜邀请我来的"></div>
       <div class="cfg-field"><label>设置密码</label><input id="newGuestPwd" type="password" placeholder="至少4位"></div>
       <div class="cfg-field"><label>确认密码</label><input id="newGuestPwd2" type="password" placeholder="再输一遍"></div>
       <button class="btn btn-primary" style="width:100%;margin-top:14px;" id="createGuestBtn">创建并登录</button>
@@ -846,16 +880,19 @@ function renderVisitorChoice(){
   });
   document.getElementById('createGuestBtn').onclick = async ()=>{
     const name = document.getElementById('newGuestName').value.trim();
+    const intro = document.getElementById('newGuestIntro').value.trim();
     const pwd = document.getElementById('newGuestPwd').value;
     const pwd2 = document.getElementById('newGuestPwd2').value;
     if(!name){ alert('起个名字吧'); return; }
     if(state.members.some(m=>m.name===name) || (state.guests||[]).some(g=>g.name===name)){ alert('这个名字已经被用过了，换一个吧'); return; }
+    if(!intro){ alert('麻烦写一下你是谁、谁邀请你来的，方便大家认识你'); return; }
     if(pwd.length<4){ alert('密码至少4位'); return; }
     if(pwd!==pwd2){ alert('两次密码不一致'); return; }
     state.guests = state.guests || [];
-    state.guests.push({ name, joinedAt: Date.now() });
+    state.guests.push({ name, joinedAt: Date.now(), intro });
     state.credentials = state.credentials || {};
     state.credentials['guest:'+name] = pwd;
+    addNotif(ADMIN_INDEX, 'new_guest', 'guest:'+name, null, intro);
     await queueSave();
     saveIdentity('guest:'+name);
     renderRoot();
@@ -981,6 +1018,7 @@ function openNotifPanel(){
       if(n.type==='like') text = `${escapeHtml(from.name)} 点赞了你的帖子`;
       else if(n.type==='comment') text = `${escapeHtml(from.name)} 评论了你的帖子${n.extra? '：'+escapeHtml(n.extra):''}`;
       else if(n.type==='reply') text = `${escapeHtml(from.name)} 回复了你的评论${n.extra? '：'+escapeHtml(n.extra):''}`;
+      else if(n.type==='new_guest') text = `🙋 新游客注册：${escapeHtml(from.name)}`;
       else text = `${escapeHtml(from.name)} 发布了一条新帖子`;
       return `<div class="member-row" style="align-items:center;">
         <div class="member-info">
@@ -1093,7 +1131,7 @@ function renderScheduleTab(target){
 
 function renderScheduleSubNav(){
   const nav = document.getElementById('scheduleSubNav');
-  const subs = [ ['checkin','暑期打卡'], ['meeting','线上会议'] ];
+  const subs = [ ['checkin','日历'], ['meeting','行程'] ];
   nav.innerHTML = subs.map(([k,l])=>`<button class="tab-btn sub-tab ${state.scheduleSub===k?'active':''}" data-sub="${k}">${l}</button>`).join('');
   nav.querySelectorAll('.sub-tab').forEach(b=>{
     b.onclick = ()=>{ state.scheduleSub = b.dataset.sub; renderScheduleSubNav(); renderScheduleSubBody(); };
@@ -1104,30 +1142,57 @@ function renderScheduleSubBody(){
   const body = document.getElementById('scheduleSubBody');
   if(state.scheduleSub==='meeting'){
     body.innerHTML = `
-      <div class="section-head"><h2>线上会议日程</h2>${canManageMeetings()? '<button class="btn btn-primary" id="addMeetingBtn" style="width:auto;padding:8px 16px;">+ 添加会议</button>' : ''}</div>
-      <div class="tabs" id="tabs"></div>
-      <div class="cal-card" id="calCard"></div>
-      <div id="meetingList" style="margin-top:18px;"></div>
+      <div class="tabs" id="tripSubNav"></div>
+      <div id="tripBody"></div>
     `;
-    renderMonthTabs();
-    renderMeetingCalendar();
-    renderMeetingListForMonth();
-    if(canManageMeetings()) document.getElementById('addMeetingBtn').onclick = ()=> openMeetingForm();
+    renderTripSubNav();
+    renderTripBody();
   }else{
     body.innerHTML = `
       <div id="quickArea"></div>
       <div class="tabs" id="tabs"></div>
       <div class="cal-card" id="calCard"></div>
-      <div class="journal">
+      <div class="journal" id="journalSection" style="display:none;">
         <div class="journal-head"><h2>生长旅程</h2></div>
         <div class="journal-note">每片叶子是一天，现在天天都要打卡。蓝色叶子代表那天缺卡但用冰冻药剂保住了连续天数——每人起始有 3 个，连续打卡满 7 天自动再送 1 个。</div>
         <div id="journalBody"></div>
       </div>
     `;
     renderMonthTabs();
-    renderQuickArea();
     renderCalendar();
-    renderJournal();
+  }
+}
+
+function renderTripSubNav(){
+  const nav = document.getElementById('tripSubNav');
+  const subs = [ ['rehearsal','排练'], ['teambuild','团建'] ];
+  nav.innerHTML = subs.map(([k,l])=>`<button class="tab-btn sub-tab ${state.tripSub===k?'active':''}" data-sub="${k}">${l}</button>`).join('');
+  nav.querySelectorAll('.sub-tab').forEach(b=>{
+    b.onclick = ()=>{ state.tripSub = b.dataset.sub; renderTripSubNav(); renderTripBody(); };
+  });
+}
+
+function getTripConfig(){
+  if(state.tripSub === 'teambuild'){
+    return { key:'teambuilds', canManage: canManageTeambuild, label:'团建' };
+  }
+  return { key:'meetings', canManage: canManageMeetings, label:'排练' };
+}
+
+function renderTripBody(){
+  const target = document.getElementById('tripBody');
+  const cfg = getTripConfig();
+  target.innerHTML = `
+    <div class="section-head"><h2>${cfg.label}行程</h2>${cfg.canManage()? `<button class="btn btn-primary" id="addTripBtn" style="width:auto;padding:8px 16px;">+ 添加${cfg.label}</button>` : ''}</div>
+    <div class="tabs" id="tabs"></div>
+    <div class="cal-card" id="calCard"></div>
+    <div id="meetingList" style="margin-top:18px;"></div>
+  `;
+  renderMonthTabs();
+  renderTripCalendar();
+  renderTripListForMonth();
+  if(cfg.canManage()){
+    document.getElementById('addTripBtn').onclick = ()=> openTripForm();
   }
 }
 
@@ -1146,109 +1211,157 @@ function renderMonthTabsOnly(){
   document.querySelectorAll('#tabs .tab-btn').forEach((b,i)=>{ b.classList.toggle('active', i===state.activeMonth); });
 }
 function renderCalendarOrMeeting(){
-  if(state.scheduleSub==='meeting'){ renderMeetingCalendar(); renderMeetingListForMonth(); }
+  if(state.scheduleSub==='meeting'){ renderTripCalendar(); renderTripListForMonth(); }
   else{ renderCalendar(); }
 }
 
-/* ---- 线上会议：日历 + 列表 ---- */
-function renderMeetingCalendar(){
+/* ---- 行程：排练 / 团建 共用的日历 + 列表（谁能管理由 getTripConfig() 决定）---- */
+function renderTripCalendar(){
+  const cfg = getTripConfig();
   const {y,m} = MONTHS[state.activeMonth];
   const card = document.getElementById('calCard');
   const firstDow = (new Date(y,m,1).getDay()+6)%7;
   const daysInMonth = new Date(y,m+1,0).getDate();
+  const items = state[cfg.key] || [];
   let html = `<div class="cal-month">${MONTHS[state.activeMonth].label} ${y}</div><div class="cal-grid">`;
   DOW.forEach(d=> html += `<div class="cal-dow">周${d}</div>`);
   for(let i=0;i<firstDow;i++) html += `<div class="cal-cell pad"></div>`;
   for(let d=1; d<=daysInMonth; d++){
     const key = dateKey(y,m,d);
     const isToday = sameDate(new Date(y,m,d), TODAY);
-    const dayMeetings = (state.meetings||[]).filter(mt=>mt.date===key);
+    const dayItems = items.filter(mt=>mt.date===key);
     let cls = 'cal-cell' + (isToday?' today':'');
     html += `<div class="${cls}" data-key="${key}"><div class="cal-date">${d}</div>`;
-    if(dayMeetings.length){
-      html += `<div style="font-size:10px;color:var(--leaf);margin-top:6px;font-weight:600;">${dayMeetings.length}场会议</div>`;
+    if(dayItems.length){
+      html += `<div style="font-size:10px;color:var(--leaf);margin-top:6px;font-weight:600;">${dayItems.length}场${cfg.label}</div>`;
     }
     html += `</div>`;
   }
   html += `</div>`;
   card.innerHTML = html;
   card.querySelectorAll('.cal-cell:not(.pad)').forEach(cell=>{
-    cell.onclick = ()=> openMeetingDayPanel(cell.dataset.key);
+    cell.onclick = ()=> openTripDayPanel(cell.dataset.key);
   });
 }
 
-function renderMeetingListForMonth(){
+function renderTripListForMonth(){
+  const cfg = getTripConfig();
   const list = document.getElementById('meetingList');
   const {y,m} = MONTHS[state.activeMonth];
   const prefix = `${y}-${pad(m+1)}`;
-  const meetings = (state.meetings||[]).filter(mt=>mt.date.startsWith(prefix)).sort((a,b)=>(a.date+(a.time||'')).localeCompare(b.date+(b.time||'')));
-  if(meetings.length===0){ list.innerHTML = `<div class="empty-hint">这个月还没有安排会议</div>`; return; }
-  list.innerHTML = meetings.map(mt=>`
+  const items = (state[cfg.key]||[]).filter(mt=>mt.date.startsWith(prefix)).sort((a,b)=>(a.date+(a.time||'')).localeCompare(b.date+(b.time||'')));
+  if(items.length===0){ list.innerHTML = `<div class="empty-hint">这个月还没有安排${cfg.label}</div>`; return; }
+  list.innerHTML = items.map(mt=>`
     <div class="meeting-card">
       <div class="meeting-date">${mt.date.slice(5)}${mt.time? '<br>'+mt.time : ''}</div>
       <div class="meeting-body">
         <div class="meeting-title">${escapeHtml(mt.title)}</div>
         ${mt.summary? `<div class="meeting-summary">${escapeHtml(mt.summary)}</div>` : ''}
+        ${(mt.photos&&mt.photos.length)? `<div class="meeting-photo-count">📷 ${mt.photos.length}</div>` : ''}
       </div>
-      ${canManageMeetings()? `<button class="icon-btn meeting-del" data-id="${mt.id}">删除</button>` : ''}
+      ${cfg.canManage()? `<button class="icon-btn meeting-del" data-id="${mt.id}">删除</button>` : ''}
     </div>
   `).join('');
   list.querySelectorAll('.meeting-del').forEach(b=>{
     b.onclick = async ()=>{
-      if(!confirm('确定删除这场会议吗？')) return;
-      state.meetings = (state.meetings||[]).filter(m=>m.id!==b.dataset.id);
+      if(!confirm(`确定删除这场${cfg.label}吗？`)) return;
+      state[cfg.key] = (state[cfg.key]||[]).filter(m=>m.id!==b.dataset.id);
       await queueSave();
-      renderMeetingCalendar(); renderMeetingListForMonth();
+      renderTripCalendar(); renderTripListForMonth();
     };
   });
 }
 
-function openMeetingDayPanel(key){
+function openTripDayPanel(key){
+  const cfg = getTripConfig();
   const overlay = document.getElementById('overlay');
   const panel = document.getElementById('panel');
-  const dayMeetings = (state.meetings||[]).filter(mt=>mt.date===key);
-  let html = `<h2>${key}</h2><div class="sub">当天的线上会议</div>`;
-  if(dayMeetings.length===0){
-    html += `<div class="empty-hint">这天还没有安排会议</div>`;
+  const dayItems = (state[cfg.key]||[]).filter(mt=>mt.date===key);
+  let html = `<h2>${key}</h2><div class="sub">当天的${cfg.label}</div>`;
+  if(dayItems.length===0){
+    html += `<div class="empty-hint">这天还没有安排${cfg.label}</div>`;
   }else{
-    html += dayMeetings.map(mt=>`
-      <div class="meeting-card">
-        <div class="meeting-body">
-          <div class="meeting-title">${mt.time? `<span style="color:var(--leaf);">${mt.time}</span> · `:''}${escapeHtml(mt.title)}</div>
-          ${mt.summary? `<div class="meeting-summary">${escapeHtml(mt.summary)}</div>` : ''}
+    html += dayItems.map(mt=>{
+      const photos = mt.photos || [];
+      return `<div class="meeting-card" style="flex-direction:column;align-items:stretch;">
+        <div style="display:flex;gap:12px;align-items:flex-start;">
+          <div class="meeting-body">
+            <div class="meeting-title">${mt.time? `<span style="color:var(--leaf);">${mt.time}</span> · `:''}${escapeHtml(mt.title)}</div>
+            ${mt.summary? `<div class="meeting-summary">${escapeHtml(mt.summary)}</div>` : ''}
+          </div>
+          ${cfg.canManage()? `<button class="icon-btn meeting-del-inline" data-id="${mt.id}">删除</button>` : ''}
         </div>
-        ${canManageMeetings()? `<button class="icon-btn meeting-del-inline" data-id="${mt.id}">删除</button>` : ''}
-      </div>`).join('');
+        ${photos.length? `<div class="trip-photo-grid">${photos.map(p=>{
+          const author = getPersonById(p.authorIdx);
+          const canDelP = String(p.authorIdx)===String(state.identity) || isAdmin();
+          return `<div class="trip-photo-item">
+            <img src="${p.src}">
+            <div class="trip-photo-meta">${escapeHtml(author.name)}${canDelP? ` · <button type="button" class="trip-photo-del" data-mt="${mt.id}" data-pid="${p.id}">删除</button>`:''}</div>
+          </div>`;
+        }).join('')}</div>` : ''}
+        <div class="trip-photo-add-row">
+          <label class="btn btn-ghost" style="cursor:pointer;width:auto;padding:6px 12px;font-size:12px;">+ 添加照片<input type="file" accept="image/*" class="trip-photo-input" data-mt="${mt.id}" style="display:none;"></label>
+        </div>
+      </div>`;
+    }).join('');
   }
   html += `<div class="panel-actions">
     <button class="btn btn-ghost" id="cancelBtn">关闭</button>
-    ${canManageMeetings()? `<button class="btn btn-primary" id="addHereBtn">+ 在这天添加会议</button>` : ''}
+    ${cfg.canManage()? `<button class="btn btn-primary" id="addHereBtn">+ 在这天添加${cfg.label}</button>` : ''}
   </div>`;
   panel.innerHTML = html;
   overlay.classList.add('show');
   document.getElementById('cancelBtn').onclick = closePanel;
   panel.querySelectorAll('.meeting-del-inline').forEach(b=>{
     b.onclick = async ()=>{
-      if(!confirm('确定删除这场会议吗？')) return;
-      state.meetings = (state.meetings||[]).filter(m=>m.id!==b.dataset.id);
+      if(!confirm(`确定删除这场${cfg.label}吗？`)) return;
+      state[cfg.key] = (state[cfg.key]||[]).filter(m=>m.id!==b.dataset.id);
       await queueSave();
-      closePanel(); renderMeetingCalendar(); renderMeetingListForMonth();
+      closePanel(); renderTripCalendar(); renderTripListForMonth();
     };
   });
-  if(canManageMeetings()){
-    document.getElementById('addHereBtn').onclick = ()=> openMeetingForm(key);
+  panel.querySelectorAll('.trip-photo-del').forEach(b=>{
+    b.onclick = async ()=>{
+      if(!confirm('删除这张照片吗？')) return;
+      const mt = (state[cfg.key]||[]).find(x=>x.id===b.dataset.mt);
+      if(mt) mt.photos = (mt.photos||[]).filter(p=>p.id!==b.dataset.pid);
+      await queueSave();
+      openTripDayPanel(key);
+      renderTripListForMonth();
+    };
+  });
+  panel.querySelectorAll('.trip-photo-input').forEach(inp=>{
+    inp.addEventListener('change', async (ev)=>{
+      const file = ev.target.files[0];
+      if(!file) return;
+      try{
+        const src = await fileToResizedDataURL(file, 700, 0.7);
+        const mt = (state[cfg.key]||[]).find(x=>x.id===inp.dataset.mt);
+        if(mt){
+          mt.photos = mt.photos || [];
+          mt.photos.push({ id:'tp_'+Date.now(), src, authorIdx: state.identity, ts: Date.now() });
+        }
+        await queueSave();
+        openTripDayPanel(key);
+        renderTripListForMonth();
+      }catch(err){ alert('图片处理失败：' + err.message); }
+    });
+  });
+  if(cfg.canManage()){
+    document.getElementById('addHereBtn').onclick = ()=> openTripForm(key);
   }
 }
 
-function openMeetingForm(presetDate){
+function openTripForm(presetDate){
+  const cfg = getTripConfig();
   const overlay = document.getElementById('overlay');
   const panel = document.getElementById('panel');
   panel.innerHTML = `
-    <h2>添加线上会议</h2>
+    <h2>添加${cfg.label}</h2>
     <div class="cfg-field"><label>日期</label><input type="date" id="mtDate" value="${presetDate||''}"></div>
     <div class="cfg-field"><label>时间</label><input type="time" id="mtTime" value="19:30"></div>
-    <div class="cfg-field"><label>会议名称</label><input id="mtTitle" placeholder="例如：暑期第三次排练总结会"></div>
-    <div class="cfg-field"><label>会议概要（选填）</label><input id="mtSummary" placeholder="简单写几句这次会议聊了什么"></div>
+    <div class="cfg-field"><label>${cfg.label}名称</label><input id="mtTitle" placeholder="${cfg.label==='排练'? '例如：暑期第三次排练总结会' : '例如：暑假团建之出海钓鱼'}"></div>
+    <div class="cfg-field"><label>概要（选填）</label><input id="mtSummary" placeholder="简单写几句这次要做什么"></div>
     <div class="panel-actions"><button class="btn btn-ghost" id="cancelBtn">取消</button><button class="btn btn-primary" id="saveMtBtn">保存</button></div>
   `;
   overlay.classList.add('show');
@@ -1258,16 +1371,16 @@ function openMeetingForm(presetDate){
     const time = document.getElementById('mtTime').value;
     const title = document.getElementById('mtTitle').value.trim();
     const summary = document.getElementById('mtSummary').value.trim();
-    if(!date || !title){ alert('日期和会议名称不能为空'); return; }
-    state.meetings = state.meetings || [];
-    state.meetings.push({ id: 'mt_'+Date.now(), date, time, title, summary });
+    if(!date || !title){ alert('日期和名称不能为空'); return; }
+    state[cfg.key] = state[cfg.key] || [];
+    state[cfg.key].push({ id: 'mt_'+Date.now(), date, time, title, summary, photos: [] });
     await queueSave();
     closePanel();
-    renderMeetingCalendar(); renderMeetingListForMonth();
+    renderTripCalendar(); renderTripListForMonth();
   };
 }
 
-/* ---- 暑期打卡：日历 + 每日速记 + 生长旅程 ---- */
+/* ---- 日历：暑期(7/8月)是打卡，其他月份是共同回忆照片相册 ---- */
 function renderQuickArea(){
   const area = document.getElementById('quickArea');
   const i = state.identity;
@@ -1333,6 +1446,22 @@ function renderQuickArea(){
 
 function renderCalendar(){
   const {y,m} = MONTHS[state.activeMonth];
+  const checkinMonth = isCheckinMonth(m);
+  const quickArea = document.getElementById('quickArea');
+  const journalSection = document.getElementById('journalSection');
+  if(quickArea) quickArea.style.display = checkinMonth ? '' : 'none';
+  if(journalSection) journalSection.style.display = checkinMonth ? '' : 'none';
+  if(checkinMonth){
+    renderQuickArea();
+    renderCheckinGrid(y,m);
+    renderJournal();
+  }else{
+    if(quickArea) quickArea.innerHTML = '';
+    renderMemoryGrid(y,m);
+  }
+}
+
+function renderCheckinGrid(y,m){
   const card = document.getElementById('calCard');
   const firstDow = (new Date(y,m,1).getDay()+6)%7;
   const daysInMonth = new Date(y,m+1,0).getDate();
@@ -1359,6 +1488,82 @@ function renderCalendar(){
   card.querySelectorAll('.cal-cell:not(.pad)').forEach(cell=>{
     cell.onclick = ()=> openDayPanel(cell.dataset.key);
   });
+}
+
+function renderMemoryGrid(y,m){
+  const card = document.getElementById('calCard');
+  const firstDow = (new Date(y,m,1).getDay()+6)%7;
+  const daysInMonth = new Date(y,m+1,0).getDate();
+  let html = `<div class="cal-month">${MONTHS[state.activeMonth].label} ${y}</div><div class="cal-grid">`;
+  DOW.forEach(d=> html += `<div class="cal-dow">周${d}</div>`);
+  for(let i=0;i<firstDow;i++) html += `<div class="cal-cell pad"></div>`;
+  for(let d=1; d<=daysInMonth; d++){
+    const key = dateKey(y,m,d);
+    const isToday = sameDate(new Date(y,m,d), TODAY);
+    const photos = state.dayMemories[key] || [];
+    let cls = 'cal-cell' + (isToday?' today':'');
+    html += `<div class="${cls}" data-key="${key}"><div class="cal-date">${d}</div>`;
+    if(photos.length){
+      html += `<div class="mem-thumb-wrap"><img class="mem-thumb" src="${photos[0].src}"><span class="mem-thumb-count">📷${photos.length}</span></div>`;
+    }
+    html += `</div>`;
+  }
+  html += `</div>`;
+  card.innerHTML = html;
+  card.querySelectorAll('.cal-cell:not(.pad)').forEach(cell=>{
+    cell.onclick = ()=> openMemoryDayPanel(cell.dataset.key);
+  });
+}
+
+function openMemoryDayPanel(key){
+  const overlay = document.getElementById('overlay');
+  const panel = document.getElementById('panel');
+  const photos = state.dayMemories[key] || [];
+  let html = `<h2>${key}</h2><div class="sub">共同回忆照片，谁都可以传，谁都能看</div>`;
+  if(photos.length===0){
+    html += `<div class="empty-hint">这天还没有人传照片，来占第一张吧</div>`;
+  }else{
+    html += `<div class="trip-photo-grid">${photos.map(p=>{
+      const author = getPersonById(p.authorIdx);
+      const canDel = String(p.authorIdx)===String(state.identity) || isAdmin();
+      return `<div class="trip-photo-item">
+        <img src="${p.src}">
+        <div class="trip-photo-meta">${escapeHtml(author.name)}${p.caption? ' · '+escapeHtml(p.caption):''}${canDel? ` · <button type="button" class="mem-photo-del" data-id="${p.id}">删除</button>`:''}</div>
+      </div>`;
+    }).join('')}</div>`;
+  }
+  html += `
+    <div class="cfg-field"><label>添加照片</label><input type="file" accept="image/*" id="memPhotoInput"></div>
+    <div class="cfg-field"><label>配一句话（可选）</label><input type="text" id="memPhotoCaption" placeholder="写点什么"></div>
+    <div class="panel-actions"><button class="btn btn-ghost" id="cancelBtn">关闭</button><button class="btn btn-primary" id="addMemPhotoBtn">上传</button></div>
+  `;
+  panel.innerHTML = html;
+  overlay.classList.add('show');
+  document.getElementById('cancelBtn').onclick = closePanel;
+  panel.querySelectorAll('.mem-photo-del').forEach(b=>{
+    b.onclick = async ()=>{
+      if(!confirm('删除这张照片吗？')) return;
+      state.dayMemories[key] = (state.dayMemories[key]||[]).filter(p=>p.id!==b.dataset.id);
+      await queueSave();
+      openMemoryDayPanel(key);
+      const {y,m} = MONTHS[state.activeMonth];
+      renderMemoryGrid(y,m);
+    };
+  });
+  document.getElementById('addMemPhotoBtn').onclick = async ()=>{
+    const file = document.getElementById('memPhotoInput').files[0];
+    if(!file){ alert('选张照片吧'); return; }
+    const caption = document.getElementById('memPhotoCaption').value.trim();
+    try{
+      const src = await fileToResizedDataURL(file, 700, 0.7);
+      state.dayMemories[key] = state.dayMemories[key] || [];
+      state.dayMemories[key].push({ id:'mp_'+Date.now(), src, caption, authorIdx: state.identity, ts: Date.now() });
+      await queueSave();
+      openMemoryDayPanel(key);
+      const {y,m} = MONTHS[state.activeMonth];
+      renderMemoryGrid(y,m);
+    }catch(err){ alert('图片处理失败：'+err.message); }
+  };
 }
 
 function openDayPanel(key){
@@ -1495,6 +1700,7 @@ document.getElementById('overlay').addEventListener('click', e=>{ if(e.target.id
 function allWeekdayKeysUpToToday(){
   const keys = [];
   MONTHS.forEach(({y,m})=>{
+    if(!isCheckinMonth(m)) return; // 打卡统计只算暑期七八月，其他月份不参与
     const days = new Date(y,m+1,0).getDate();
     for(let d=1; d<=days; d++){
       const dt = new Date(y,m,d);
@@ -1634,7 +1840,7 @@ function renderJournal(){
         <div class="vine-stats"><b>${total}</b> 次 · 连续 <b>${info.streak}</b> 天 · 🧊×${info.tokens}</div>
       </div>
       <div class="stem-wrap"><div class="stem">`;
-    MONTHS.forEach(({y,m})=>{
+    MONTHS.filter(({m})=>isCheckinMonth(m)).forEach(({y,m})=>{
       const days = new Date(y,m+1,0).getDate();
       for(let d=1; d<=days; d++){
         const dt = new Date(y,m,d);
