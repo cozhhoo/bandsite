@@ -36,6 +36,8 @@ Resources:`;for(let t of c){if(!t||typeof t!=`string`)throw Error(`@supabase/aut
   .daily-quote{margin-top:12px;padding:12px 16px;background:var(--card);border:1px dashed var(--line);border-radius:10px;}
   .dq-label{font-family:'Space Grotesk',sans-serif;font-size:11px;letter-spacing:.08em;text-transform:uppercase;color:var(--leaf);font-weight:700;margin-bottom:4px;}
   .dq-text{font-family:'Noto Serif SC',serif;font-size:14.5px;color:var(--ink);line-height:1.6;}
+  .birthday-banner{margin-top:10px;padding:10px 16px;background:#FDF0E0;border:1px solid #EBC896;border-radius:10px;font-size:13.5px;color:#8A5A1E;}
+  .birthday-banner b{color:#6B3E0A;}
   .profile-subnav{display:flex;gap:8px;margin-bottom:18px;}
   .top-bar{display:flex;align-items:center;justify-content:space-between;margin-bottom:18px;}
   .name-edit-row{display:flex;gap:8px;align-items:center;}
@@ -974,10 +976,19 @@ function pickDailyQuote(){
   return { text: DAILY_QUOTES[idx], date: dateStr };
 }
 
+function getTodaysBirthdays(){
+  const mmdd = `${pad(TODAY.getMonth()+1)}-${pad(TODAY.getDate())}`;
+  return allPeople().filter(p=>{
+    const prof = state.profiles[p.id];
+    return !!(prof && prof.birthday && prof.birthday.length>=10 && prof.birthday.slice(5,10)===mmdd);
+  });
+}
+
 function render(){
   const app = document.getElementById('app');
   const me = getPersonById(state.identity);
   const dq = pickDailyQuote();
+  const birthdays = getTodaysBirthdays();
   app.innerHTML = `
     <header>
       <button class="notif-bell" id="notifBell" type="button">🔔<span class="notif-badge" id="notifBadge" style="display:none;">0</span></button>
@@ -987,6 +998,7 @@ function render(){
         <div class="dq-label">今日寄语 · ${dq.date}</div>
         <div class="dq-text">${escapeHtml(dq.text)}</div>
       </div>
+      ${birthdays.length? `<div class="birthday-banner">🎂 今天是 <b>${birthdays.map(p=>escapeHtml(p.name)).join('、')}</b> 的生日，记得祝一句！</div>` : ''}
     </header>
     <div id="mainBody"></div>
     <footer>数据对所有登录的人共享可见 · <button class="footer-link" id="switchId">不是你？切换身份</button></footer>
