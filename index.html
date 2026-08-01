@@ -199,7 +199,6 @@ Resources:`;for(let t of c){if(!t||typeof t!=`string`)throw Error(`@supabase/aut
   .sh-hud{position:absolute;top:8px;left:0;right:0;display:flex;justify-content:space-between;padding:0 14px;color:#fff;font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:14px;text-shadow:0 1px 3px rgba(0,0,0,.6);pointer-events:none;}
   .sh-joystick{position:absolute;left:20px;bottom:20px;width:90px;height:90px;border-radius:50%;background:rgba(255,255,255,.25);border:2px solid rgba(255,255,255,.5);touch-action:none;}
   .sh-joystick-knob{position:absolute;left:50%;top:50%;width:40px;height:40px;margin:-20px 0 0 -20px;border-radius:50%;background:rgba(255,255,255,.85);}
-  .sh-firebtn{position:absolute;right:20px;bottom:16px;width:110px;height:110px;border-radius:50%;background:rgba(180,85,63,.75);border:3px solid rgba(255,255,255,.6);display:flex;align-items:center;justify-content:center;font-size:38px;touch-action:none;user-select:none;}
   .sh-topbtns{position:absolute;top:8px;right:10px;display:flex;gap:6px;}
   .sh-exit-btn{position:static;background:rgba(0,0,0,.5);color:#fff;border:none;border-radius:8px;padding:5px 12px;font-size:11px;cursor:pointer;}
   .sh-stage{overscroll-behavior:contain;}
@@ -1459,7 +1458,7 @@ function renderShooterLobby(target, game){
   target.innerHTML = `
     <button class="back-link" id="backToGames">← 返回娱乐吧</button>
     <div class="section-head"><h2>🔫 枪战对决 · 报名大厅</h2></div>
-    <p class="sub" style="margin-bottom:10px;">手机横屏玩，左手摇杆移动、右手按住开火。固定3分钟，时间到了比击杀数。5滴血，隔几秒随机复活。场上有个厚血条的 boss「毛兽」，站着不动，需要大家一起打，打死了击杀者会获得限时加特林（伤害更高、射速更快）。</p>
+    <p class="sub" style="margin-bottom:10px;">手机横屏玩，只有一个摇杆——只管移动，角色会朝着面向的方向自动持续开火。子弹有限，打光了要去捡地上的弹药包。固定3分钟，时间到了比击杀数。5滴血，隔几秒随机复活。场上有个厚血条的 boss「毛兽」，站着不动，需要大家一起打，打死了击杀者会获得限时加特林（伤害更高、射速更快）。</p>
     <div class="banner">📱 强烈建议先把这个网页"添加到主屏幕"再打开玩（浏览器分享菜单里），能大幅减少打游戏时手指划到屏幕边缘导致意外退出的情况。</div>
     <div class="cfg-field"><label>模式</label>
       <select id="shModeSelect">
@@ -1548,6 +1547,7 @@ const SHOOTER_BOSS_RESPAWN_MS = 30000; // 毛兽被打死后，30秒再刷新一
 const SHOOTER_GATLING_DURATION = 30000; // 加特林奖励持续30秒
 let shooterGatlingUntil = 0;
 let shooterBackGuardActive = false;
+let shooterAutoFireTimer = null;
 
 /* ---- 简单可复现的伪随机（同一个 tick 大家算出来的结果一致，不用联网同步）---- */
 function seededRandom(seed){
@@ -1556,13 +1556,13 @@ function seededRandom(seed){
 }
 function getActivePickups(game){
   const elapsed = Date.now() - (game.startedAt||Date.now());
-  const cycle = 15000;
+  const cycle = 10000; // 刷新周期从15秒缩短到10秒，因为现在是自动连续开火，弹药消耗快很多
   const tick = Math.floor(elapsed/cycle);
   return SHOOTER_SPAWN_POINTS.map((pt, idx)=>{
     const seed = tick*7 + idx*13 + 1;
-    const show = seededRandom(seed) < 0.7;
+    const show = seededRandom(seed) < 0.85; // 出现概率也调高，弹药包更容易刷出来
     if(!show) return null;
-    const type = seededRandom(seed+3) < 0.5 ? 'ammo' : 'health';
+    const type = seededRandom(seed+3) < 0.75 ? 'ammo' : 'health'; // 弹药包的比例明显调高
     return { x:pt.x, y:pt.y, type, key: idx+'_'+tick };
   }).filter(Boolean);
 }
@@ -1662,7 +1662,6 @@ function renderShooterPlaying(target, game){
         <div class="sh-hud" id="shHud"></div>
         ${amPlaying? `
           <div class="sh-joystick" id="shJoystick"><div class="sh-joystick-knob" id="shJoystickKnob"></div></div>
-          <div class="sh-firebtn" id="shFireBtn">🔥</div>
         ` : `<div class="sh-spectate-tag">👀 旁观中</div>`}
         <div class="sh-topbtns">
           <button class="sh-exit-btn" id="shFullscreenBtn">⛶全屏</button>
@@ -1697,7 +1696,7 @@ function renderShooterPlaying(target, game){
 
   // 初始化自己的实时状态
   const spawnPt = SHOOTER_SPAWN_POINTS[game.players.indexOf(mine) % SHOOTER_SPAWN_POINTS.length] || {x:400,y:225};
-  shooterMe = { x:spawnPt.x, y:spawnPt.y, angle:0, hp:5, ammo:10, alive:true, kills:0, respawnAt:0 };
+  shooterMe = { x:spawnPt.x, y:spawnPt.y, angle:0, hp:5, ammo:24, alive:true, kills:0, respawnAt:0 };
   shooterCollected = new Set();
   shooterGatlingUntil = 0;
   if(!game.boss) game.boss = { name:'毛兽', hp:60, maxHp:60, x:400, y:225, alive:true, respawnAt:0 };
@@ -1735,9 +1734,7 @@ function renderShooterPlaying(target, game){
     window.addEventListener('pointermove', ev=>{ if(joyActive) joyMove(ev.clientX, ev.clientY); });
     window.addEventListener('pointerup', ()=>{ if(joyActive) joyEnd(); });
 
-    // 开火键：有加特林奖励时，伤害更高、射速更快
-    const fireBtn = document.getElementById('shFireBtn');
-    let firing = false, fireTimer = null;
+    // 自动开火：不用按键，角色朝着当前面向的方向持续自动射击；有加特林奖励时更快更强
     function hasGatling(){ return Date.now() < shooterGatlingUntil; }
     function doFire(){
       if(!shooterMe || !shooterMe.alive || shooterMe.ammo<=0) return;
@@ -1747,17 +1744,11 @@ function renderShooterPlaying(target, game){
       shooterBullets.push(b);
       if(shooterChannel) shooterChannel.send({ type:'broadcast', event:'shot', payload:{ id:mine, x:b.x, y:b.y, angle:b.angle } });
     }
-    function scheduleFire(){
+    function scheduleAutoFire(){
       doFire();
-      fireTimer = setTimeout(()=>{ if(firing) scheduleFire(); }, hasGatling() ? 120 : 350);
+      shooterAutoFireTimer = setTimeout(scheduleAutoFire, hasGatling() ? 120 : 350);
     }
-    fireBtn.addEventListener('pointerdown', ev=>{
-      firing = true; scheduleFire();
-      ev.preventDefault();
-    });
-    function stopFire(){ firing=false; if(fireTimer){ clearTimeout(fireTimer); fireTimer=null; } }
-    window.addEventListener('pointerup', stopFire);
-    fireBtn.addEventListener('pointercancel', stopFire);
+    scheduleAutoFire();
   }
 
   const canvas = document.getElementById('shCanvas');
@@ -1795,7 +1786,7 @@ function renderShooterPlaying(target, game){
           if(shooterCollected.has(p.key)) return;
           if(Math.hypot(shooterMe.x-p.x, shooterMe.y-p.y) < 24){
             shooterCollected.add(p.key);
-            if(p.type==='ammo') shooterMe.ammo = Math.min(20, shooterMe.ammo+5);
+            if(p.type==='ammo') shooterMe.ammo = Math.min(40, shooterMe.ammo+12);
             else shooterMe.hp = Math.min(5, shooterMe.hp+2);
           }
         });
@@ -1935,6 +1926,7 @@ function renderShooterPlaying(target, game){
 
 function stopShooterLoop(){
   if(shooterRAF){ cancelAnimationFrame(shooterRAF); shooterRAF = null; }
+  if(shooterAutoFireTimer){ clearTimeout(shooterAutoFireTimer); shooterAutoFireTimer = null; }
   leaveShooterChannel();
   disableShooterBackGuard();
   shooterMe = null;
