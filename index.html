@@ -200,7 +200,9 @@ Resources:`;for(let t of c){if(!t||typeof t!=`string`)throw Error(`@supabase/aut
   .sh-joystick{position:absolute;left:20px;bottom:20px;width:90px;height:90px;border-radius:50%;background:rgba(255,255,255,.25);border:2px solid rgba(255,255,255,.5);touch-action:none;}
   .sh-joystick-knob{position:absolute;left:50%;top:50%;width:40px;height:40px;margin:-20px 0 0 -20px;border-radius:50%;background:rgba(255,255,255,.85);}
   .sh-firebtn{position:absolute;right:24px;bottom:26px;width:70px;height:70px;border-radius:50%;background:rgba(180,85,63,.75);border:2px solid rgba(255,255,255,.6);display:flex;align-items:center;justify-content:center;font-size:26px;touch-action:none;user-select:none;}
-  .sh-exit-btn{position:absolute;top:8px;right:10px;background:rgba(0,0,0,.5);color:#fff;border:none;border-radius:8px;padding:5px 12px;font-size:11px;cursor:pointer;}
+  .sh-topbtns{position:absolute;top:8px;right:10px;display:flex;gap:6px;}
+  .sh-exit-btn{position:static;background:rgba(0,0,0,.5);color:#fff;border:none;border-radius:8px;padding:5px 12px;font-size:11px;cursor:pointer;}
+  .sh-stage{overscroll-behavior:contain;}
   .sh-spectate-tag{position:absolute;bottom:12px;left:50%;transform:translateX(-50%);background:rgba(0,0,0,.5);color:#fff;padding:5px 12px;border-radius:999px;font-size:12px;}
   .sh-player-chip{cursor:default;}
   .back-link{background:none;border:none;color:var(--leaf);font-family:'Space Grotesk',sans-serif;font-size:13px;cursor:pointer;padding:0;margin-bottom:14px;display:inline-flex;align-items:center;gap:4px;}
@@ -1457,7 +1459,8 @@ function renderShooterLobby(target, game){
   target.innerHTML = `
     <button class="back-link" id="backToGames">← 返回娱乐吧</button>
     <div class="section-head"><h2>🔫 枪战对决 · 报名大厅</h2></div>
-    <p class="sub" style="margin-bottom:10px;">手机横屏玩，左手摇杆移动、右手按住开火。固定3分钟，时间到了比击杀数。5滴血，隔几秒随机复活。</p>
+    <p class="sub" style="margin-bottom:10px;">手机横屏玩，左手摇杆移动、右手按住开火。固定3分钟，时间到了比击杀数。5滴血，隔几秒随机复活。场上有个厚血条的 boss「毛兽」，站着不动，需要大家一起打，打死了击杀者会获得限时加特林（伤害更高、射速更快）。</p>
+    <div class="banner">📱 强烈建议先把这个网页"添加到主屏幕"再打开玩（浏览器分享菜单里），能大幅减少打游戏时手指划到屏幕边缘导致意外退出的情况。</div>
     <div class="cfg-field"><label>模式</label>
       <select id="shModeSelect">
         <option value="solo" ${game.mode==='solo'?'selected':''}>个人混战</option>
@@ -1538,7 +1541,13 @@ function startShooterGame(game){
   game.startedAt = Date.now();
   game.obstacles = obstacles;
   game.lastResult = null;
+  game.boss = { name:'毛兽', hp:60, maxHp:60, x:400, y:225, alive:true, respawnAt:0 };
 }
+
+const SHOOTER_BOSS_RESPAWN_MS = 30000; // 毛兽被打死后，30秒再刷新一次
+const SHOOTER_GATLING_DURATION = 30000; // 加特林奖励持续30秒
+let shooterGatlingUntil = 0;
+let shooterBackGuardActive = false;
 
 /* ---- 简单可复现的伪随机（同一个 tick 大家算出来的结果一致，不用联网同步）---- */
 function seededRandom(seed){
@@ -1567,7 +1576,7 @@ const shooterBullets = []; // 本机渲染的子弹（含自己打的和别人�
 let shooterMe = null; // 自己的实时状态
 let shooterCollected = new Set(); // 本局已经吃过的资源key，避免同一格反复加
 
-function joinShooterChannel(onHit){
+function joinShooterChannel(onHit, game){
   if(shooterChannel) return;
   shooterChannel = supabaseClient.channel('band-shooter-live', { config:{ broadcast:{ self:false } } });
   shooterChannel.on('broadcast', {event:'state'}, (msg)=>{
@@ -1580,12 +1589,57 @@ function joinShooterChannel(onHit){
   shooterChannel.on('broadcast', {event:'hit'}, (msg)=>{
     if(String(msg.payload.targetId)===String(state.identity)) onHit(msg.payload.dmg);
   });
+  // 毛兽血量只有房主的设备说了算，其他人只广播"我打了它一下"，房主扣血后把最新状态广播回来
+  shooterChannel.on('broadcast', {event:'bossHit'}, (msg)=>{
+    if(String(state.identity) !== String(game.hostId)) return;
+    if(!game.boss || !game.boss.alive) return;
+    game.boss.hp = Math.max(0, game.boss.hp - msg.payload.dmg);
+    if(game.boss.hp <= 0){
+      game.boss.alive = false;
+      game.boss.respawnAt = Date.now() + SHOOTER_BOSS_RESPAWN_MS;
+      shooterChannel.send({ type:'broadcast', event:'gatling', payload:{ targetId: msg.payload.from, until: Date.now()+SHOOTER_GATLING_DURATION } });
+    }
+    shooterChannel.send({ type:'broadcast', event:'bossState', payload:{ hp:game.boss.hp, alive:game.boss.alive, respawnAt:game.boss.respawnAt } });
+  });
+  shooterChannel.on('broadcast', {event:'bossState'}, (msg)=>{
+    if(!game.boss) game.boss = { name:'毛兽', hp:60, maxHp:60, x:400, y:225, alive:true, respawnAt:0 };
+    Object.assign(game.boss, msg.payload);
+  });
+  shooterChannel.on('broadcast', {event:'gatling'}, (msg)=>{
+    if(String(msg.payload.targetId)===String(state.identity)) shooterGatlingUntil = msg.payload.until;
+  });
   shooterChannel.subscribe();
 }
 function leaveShooterChannel(){
   if(shooterChannel){ try{ shooterChannel.unsubscribe(); }catch(e){} shooterChannel = null; }
   Object.keys(shooterRemote).forEach(k=>delete shooterRemote[k]);
   shooterBullets.length = 0;
+  shooterGatlingUntil = 0;
+}
+
+/* ---- 防误触：拦截手机的"边缘滑动返回"手势，改成弹窗确认退出 ---- */
+function shooterPopstateHandler(){
+  if(!shooterBackGuardActive) return;
+  const wantExit = confirm('确定要退出游戏吗？');
+  if(wantExit){
+    disableShooterBackGuard();
+    stopShooterLoop();
+    state.funGame = null;
+    renderFunTab(document.getElementById('tabContent'));
+  }else{
+    history.pushState({shooterGuard:true}, '');
+  }
+}
+function enableShooterBackGuard(){
+  if(shooterBackGuardActive) return;
+  shooterBackGuardActive = true;
+  try{ history.pushState({shooterGuard:true}, ''); }catch(e){}
+  window.addEventListener('popstate', shooterPopstateHandler);
+}
+function disableShooterBackGuard(){
+  if(!shooterBackGuardActive) return;
+  shooterBackGuardActive = false;
+  window.removeEventListener('popstate', shooterPopstateHandler);
 }
 
 function renderShooterPlaying(target, game){
@@ -1601,14 +1655,24 @@ function renderShooterPlaying(target, game){
           <div class="sh-joystick" id="shJoystick"><div class="sh-joystick-knob" id="shJoystickKnob"></div></div>
           <div class="sh-firebtn" id="shFireBtn">🔥</div>
         ` : `<div class="sh-spectate-tag">👀 旁观中</div>`}
-        <button class="sh-exit-btn" id="shExitBtn">退出</button>
+        <div class="sh-topbtns">
+          <button class="sh-exit-btn" id="shFullscreenBtn">⛶全屏</button>
+          <button class="sh-exit-btn" id="shExitBtn">退出</button>
+        </div>
       </div>
     </div>
   `;
+  enableShooterBackGuard();
   document.getElementById('shExitBtn').onclick = ()=>{
+    if(!confirm('确定要退出游戏吗？')) return;
     stopShooterLoop();
     state.funGame = null;
     renderFunTab(target);
+  };
+  document.getElementById('shFullscreenBtn').onclick = ()=>{
+    const el = document.getElementById('shWrap');
+    if(el.requestFullscreen) el.requestFullscreen().catch(()=>{});
+    else alert('这台设备/浏览器不支持网页全屏（iPhone Safari 目前不支持），建议改用"添加到主屏幕"打开会更接近全屏效果。');
   };
 
   function checkRotate(){
@@ -1626,6 +1690,8 @@ function renderShooterPlaying(target, game){
   const spawnPt = SHOOTER_SPAWN_POINTS[game.players.indexOf(mine) % SHOOTER_SPAWN_POINTS.length] || {x:400,y:225};
   shooterMe = { x:spawnPt.x, y:spawnPt.y, angle:0, hp:5, ammo:10, alive:true, kills:0, respawnAt:0 };
   shooterCollected = new Set();
+  shooterGatlingUntil = 0;
+  if(!game.boss) game.boss = { name:'毛兽', hp:60, maxHp:60, x:400, y:225, alive:true, respawnAt:0 };
 
   joinShooterChannel((dmg)=>{
     if(!shooterMe || !shooterMe.alive) return;
@@ -1634,7 +1700,11 @@ function renderShooterPlaying(target, game){
       shooterMe.alive = false;
       shooterMe.respawnAt = Date.now() + 3000;
     }
-  });
+  }, game);
+
+  // 阻止下拉刷新/缩放等系统手势在游戏区域内触发
+  const stageEl = document.getElementById('shStage');
+  stageEl.addEventListener('touchmove', ev=>{ ev.preventDefault(); }, { passive:false });
 
   // 摇杆
   let joyActive = false, joyDX = 0, joyDY = 0;
@@ -1656,22 +1726,27 @@ function renderShooterPlaying(target, game){
     window.addEventListener('pointermove', ev=>{ if(joyActive) joyMove(ev.clientX, ev.clientY); });
     window.addEventListener('pointerup', ()=>{ if(joyActive) joyEnd(); });
 
-    // 开火键
+    // 开火键：有加特林奖励时，伤害更高、射速更快
     const fireBtn = document.getElementById('shFireBtn');
     let firing = false, fireTimer = null;
+    function hasGatling(){ return Date.now() < shooterGatlingUntil; }
     function doFire(){
       if(!shooterMe || !shooterMe.alive || shooterMe.ammo<=0) return;
       shooterMe.ammo--;
-      const b = { x:shooterMe.x, y:shooterMe.y, angle:shooterMe.angle, ownerId:mine, remote:false, life:60 };
+      const dmg = hasGatling() ? 3 : 1;
+      const b = { x:shooterMe.x, y:shooterMe.y, angle:shooterMe.angle, ownerId:mine, remote:false, life:60, dmg };
       shooterBullets.push(b);
       if(shooterChannel) shooterChannel.send({ type:'broadcast', event:'shot', payload:{ id:mine, x:b.x, y:b.y, angle:b.angle } });
     }
+    function scheduleFire(){
+      doFire();
+      fireTimer = setTimeout(()=>{ if(firing) scheduleFire(); }, hasGatling() ? 120 : 350);
+    }
     fireBtn.addEventListener('pointerdown', ev=>{
-      firing = true; doFire();
-      fireTimer = setInterval(doFire, 350);
+      firing = true; scheduleFire();
       ev.preventDefault();
     });
-    function stopFire(){ firing=false; if(fireTimer){ clearInterval(fireTimer); fireTimer=null; } }
+    function stopFire(){ firing=false; if(fireTimer){ clearTimeout(fireTimer); fireTimer=null; } }
     window.addEventListener('pointerup', stopFire);
     fireBtn.addEventListener('pointercancel', stopFire);
   }
@@ -1733,17 +1808,29 @@ function renderShooterPlaying(target, game){
       const hitObstacle = game.obstacles.some(o=> b.x>o.x && b.x<o.x+o.w && b.y>o.y && b.y<o.y+o.h);
       if(outOfBounds || hitObstacle || b.life<=0){ shooterBullets.splice(i,1); continue; }
       if(!b.remote && String(b.ownerId)===String(mine)){
+        let consumed = false;
         for(const [rid, rp] of Object.entries(shooterRemote)){
           if(!rp.alive) continue;
           if(game.mode==='team' && game.teams[rid] && game.teams[mine] && game.teams[rid]===game.teams[mine]) continue;
           if(Math.hypot(b.x-rp.x, b.y-rp.y) < 18){
             shooterMe.kills = (shooterMe.kills||0)+1;
-            if(shooterChannel) shooterChannel.send({ type:'broadcast', event:'hit', payload:{ targetId:rid, dmg:1 } });
+            if(shooterChannel) shooterChannel.send({ type:'broadcast', event:'hit', payload:{ targetId:rid, dmg:b.dmg||1 } });
             shooterBullets.splice(i,1);
+            consumed = true;
             break;
           }
         }
+        if(!consumed && game.boss && game.boss.alive && Math.hypot(b.x-game.boss.x, b.y-game.boss.y) < 26){
+          if(shooterChannel) shooterChannel.send({ type:'broadcast', event:'bossHit', payload:{ dmg:b.dmg||1, from:mine } });
+          shooterBullets.splice(i,1);
+        }
       }
+    }
+
+    // 房主负责毛兽的复活判定
+    if(String(mine)===String(game.hostId) && game.boss && !game.boss.alive && now >= game.boss.respawnAt){
+      game.boss.alive = true; game.boss.hp = game.boss.maxHp;
+      if(shooterChannel) shooterChannel.send({ type:'broadcast', event:'bossState', payload:{ hp:game.boss.hp, alive:true, respawnAt:0 } });
     }
 
     // 画面
@@ -1756,7 +1843,20 @@ function renderShooterPlaying(target, game){
       ctx.font = '22px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
       ctx.fillText(p.type==='ammo'?'🔫':'❤️', p.x, p.y);
     });
-    shooterBullets.forEach(b=>{ ctx.fillStyle = '#E2A33D'; ctx.beginPath(); ctx.arc(b.x,b.y,4,0,Math.PI*2); ctx.fill(); });
+    // 毛兽
+    if(game.boss && game.boss.alive){
+      ctx.font = '40px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText('🐻', game.boss.x, game.boss.y);
+      ctx.fillStyle = '#223328'; ctx.font='11px sans-serif';
+      ctx.fillText(game.boss.name||'毛兽', game.boss.x, game.boss.y-30);
+      ctx.fillStyle = '#ddd'; ctx.fillRect(game.boss.x-30, game.boss.y+26, 60, 6);
+      ctx.fillStyle = '#8B2E1F'; ctx.fillRect(game.boss.x-30, game.boss.y+26, 60*Math.max(0,game.boss.hp)/game.boss.maxHp, 6);
+    }else if(game.boss){
+      const remainS = Math.max(0, Math.ceil((game.boss.respawnAt-now)/1000));
+      ctx.fillStyle = 'rgba(34,51,40,.5)'; ctx.font='13px sans-serif'; ctx.textAlign='center';
+      ctx.fillText(`毛兽 ${remainS}秒后刷新`, game.boss.x, game.boss.y);
+    }
+    shooterBullets.forEach(b=>{ ctx.fillStyle = b.dmg>1? '#B4553F' : '#E2A33D'; ctx.beginPath(); ctx.arc(b.x,b.y,b.dmg>1?6:4,0,Math.PI*2); ctx.fill(); });
 
     function drawPlayer(pid, st){
       if(!st) return;
@@ -1778,6 +1878,10 @@ function renderShooterPlaying(target, game){
       }
       ctx.strokeStyle = teamColor || '#223328'; ctx.lineWidth = 2;
       ctx.beginPath(); ctx.arc(st.x, st.y, 18, 0, Math.PI*2); ctx.stroke();
+      if(String(pid)===String(mine) && Date.now()<shooterGatlingUntil){
+        ctx.strokeStyle = '#E2A33D'; ctx.lineWidth = 3;
+        ctx.beginPath(); ctx.arc(st.x, st.y, 21, 0, Math.PI*2); ctx.stroke();
+      }
       ctx.fillStyle = '#223328'; ctx.font='11px sans-serif'; ctx.textAlign='center';
       ctx.fillText(getPersonById(pid).name, st.x, st.y-26);
       // 血条
@@ -1795,7 +1899,8 @@ function renderShooterPlaying(target, game){
       const mm = Math.floor(remain/60000), ss = Math.floor((remain%60000)/1000);
       let scoreHtml = '';
       if(amPlaying && shooterMe){
-        scoreHtml = `❤️${shooterMe.hp} · 🔫${shooterMe.ammo} · 🏆${shooterMe.kills||0}`;
+        const gatlingTag = Date.now()<shooterGatlingUntil ? ` · 🔥加特林${Math.ceil((shooterGatlingUntil-Date.now())/1000)}s` : '';
+        scoreHtml = `❤️${shooterMe.hp} · 🔫${shooterMe.ammo} · 🏆${shooterMe.kills||0}${gatlingTag}`;
       }
       hud.innerHTML = `<div class="sh-timer">${mm}:${String(ss).padStart(2,'0')}</div><div class="sh-score">${scoreHtml}</div>`;
       if(remain<=0 && !endedTriggered){
@@ -1810,6 +1915,7 @@ function renderShooterPlaying(target, game){
 function stopShooterLoop(){
   if(shooterRAF){ cancelAnimationFrame(shooterRAF); shooterRAF = null; }
   leaveShooterChannel();
+  disableShooterBackGuard();
   shooterMe = null;
 }
 
