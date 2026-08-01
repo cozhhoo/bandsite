@@ -199,7 +199,7 @@ Resources:`;for(let t of c){if(!t||typeof t!=`string`)throw Error(`@supabase/aut
   .sh-hud{position:absolute;top:8px;left:0;right:0;display:flex;justify-content:space-between;padding:0 14px;color:#fff;font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:14px;text-shadow:0 1px 3px rgba(0,0,0,.6);pointer-events:none;}
   .sh-joystick{position:absolute;left:20px;bottom:20px;width:90px;height:90px;border-radius:50%;background:rgba(255,255,255,.25);border:2px solid rgba(255,255,255,.5);touch-action:none;}
   .sh-joystick-knob{position:absolute;left:50%;top:50%;width:40px;height:40px;margin:-20px 0 0 -20px;border-radius:50%;background:rgba(255,255,255,.85);}
-  .sh-firebtn{position:absolute;right:24px;bottom:26px;width:70px;height:70px;border-radius:50%;background:rgba(180,85,63,.75);border:2px solid rgba(255,255,255,.6);display:flex;align-items:center;justify-content:center;font-size:26px;touch-action:none;user-select:none;}
+  .sh-firebtn{position:absolute;right:20px;bottom:16px;width:110px;height:110px;border-radius:50%;background:rgba(180,85,63,.75);border:3px solid rgba(255,255,255,.6);display:flex;align-items:center;justify-content:center;font-size:38px;touch-action:none;user-select:none;}
   .sh-topbtns{position:absolute;top:8px;right:10px;display:flex;gap:6px;}
   .sh-exit-btn{position:static;background:rgba(0,0,0,.5);color:#fff;border:none;border-radius:8px;padding:5px 12px;font-size:11px;cursor:pointer;}
   .sh-stage{overscroll-behavior:contain;}
@@ -1581,7 +1581,16 @@ function joinShooterChannel(onHit, game){
   shooterChannel = supabaseClient.channel('band-shooter-live', { config:{ broadcast:{ self:false } } });
   shooterChannel.on('broadcast', {event:'state'}, (msg)=>{
     const p = msg.payload;
-    shooterRemote[p.id] = p;
+    const existing = shooterRemote[p.id];
+    const fromX = existing && existing.renderX!==undefined ? existing.renderX : p.x;
+    const fromY = existing && existing.renderY!==undefined ? existing.renderY : p.y;
+    const fromAngle = existing && existing.renderAngle!==undefined ? existing.renderAngle : p.angle;
+    shooterRemote[p.id] = Object.assign({}, p, {
+      prevX: fromX, prevY: fromY, prevAngle: fromAngle,
+      targetX: p.x, targetY: p.y, targetAngle: p.angle,
+      renderX: fromX, renderY: fromY, renderAngle: fromAngle,
+      recvTs: Date.now()
+    });
   });
   shooterChannel.on('broadcast', {event:'shot'}, (msg)=>{
     shooterBullets.push({ x:msg.payload.x, y:msg.payload.y, angle:msg.payload.angle, ownerId:msg.payload.id, remote:true, life:60 });
@@ -1800,6 +1809,16 @@ function renderShooterPlaying(target, game){
       }
     }
 
+    // 平滑插值：把每个人"上一条广播位置"到"最新广播位置"之间，按时间比例补出中间过程，
+    // 不然每0.1秒才更新一次位置，看起来就会一顿一顿地瞬移
+    const INTERP_MS = 130; // 略大于广播间隔(100ms)，让插值刚好覆盖到下一条消息抵达
+    Object.values(shooterRemote).forEach(rp=>{
+      const t = Math.min(1, (now - rp.recvTs) / INTERP_MS);
+      rp.renderX = rp.prevX + (rp.targetX - rp.prevX) * t;
+      rp.renderY = rp.prevY + (rp.targetY - rp.prevY) * t;
+      rp.renderAngle = rp.prevAngle + (rp.targetAngle - rp.prevAngle) * t;
+    });
+
     // 子弹运动 + 命中判定（只有子弹的主人自己判定命中）
     for(let i=shooterBullets.length-1;i>=0;i--){
       const b = shooterBullets[i];
@@ -1812,7 +1831,7 @@ function renderShooterPlaying(target, game){
         for(const [rid, rp] of Object.entries(shooterRemote)){
           if(!rp.alive) continue;
           if(game.mode==='team' && game.teams[rid] && game.teams[mine] && game.teams[rid]===game.teams[mine]) continue;
-          if(Math.hypot(b.x-rp.x, b.y-rp.y) < 18){
+          if(Math.hypot(b.x-(rp.renderX??rp.x), b.y-(rp.renderY??rp.y)) < 18){
             shooterMe.kills = (shooterMe.kills||0)+1;
             if(shooterChannel) shooterChannel.send({ type:'broadcast', event:'hit', payload:{ targetId:rid, dmg:b.dmg||1 } });
             shooterBullets.splice(i,1);
@@ -1860,6 +1879,8 @@ function renderShooterPlaying(target, game){
 
     function drawPlayer(pid, st){
       if(!st) return;
+      const px = st.renderX!==undefined ? st.renderX : st.x;
+      const py = st.renderY!==undefined ? st.renderY : st.y;
       const teamColor = game.mode==='team' && game.teams[pid] ? SHOOTER_TEAM_COLOR[game.teams[pid]] : null;
       ctx.save();
       ctx.globalAlpha = st.alive===false ? 0.3 : 1;
@@ -1868,25 +1889,25 @@ function renderShooterPlaying(target, game){
         const im = getImg(avatar);
         if(im.complete && im.naturalWidth){
           ctx.save();
-          ctx.beginPath(); ctx.arc(st.x, st.y, 18, 0, Math.PI*2); ctx.clip();
-          ctx.drawImage(im, st.x-18, st.y-18, 36, 36);
+          ctx.beginPath(); ctx.arc(px, py, 18, 0, Math.PI*2); ctx.clip();
+          ctx.drawImage(im, px-18, py-18, 36, 36);
           ctx.restore();
         }
       }else{
         ctx.fillStyle = teamColor || '#4C7A5E';
-        ctx.beginPath(); ctx.arc(st.x, st.y, 18, 0, Math.PI*2); ctx.fill();
+        ctx.beginPath(); ctx.arc(px, py, 18, 0, Math.PI*2); ctx.fill();
       }
       ctx.strokeStyle = teamColor || '#223328'; ctx.lineWidth = 2;
-      ctx.beginPath(); ctx.arc(st.x, st.y, 18, 0, Math.PI*2); ctx.stroke();
+      ctx.beginPath(); ctx.arc(px, py, 18, 0, Math.PI*2); ctx.stroke();
       if(String(pid)===String(mine) && Date.now()<shooterGatlingUntil){
         ctx.strokeStyle = '#E2A33D'; ctx.lineWidth = 3;
-        ctx.beginPath(); ctx.arc(st.x, st.y, 21, 0, Math.PI*2); ctx.stroke();
+        ctx.beginPath(); ctx.arc(px, py, 21, 0, Math.PI*2); ctx.stroke();
       }
       ctx.fillStyle = '#223328'; ctx.font='11px sans-serif'; ctx.textAlign='center';
-      ctx.fillText(getPersonById(pid).name, st.x, st.y-26);
+      ctx.fillText(getPersonById(pid).name, px, py-26);
       // 血条
-      ctx.fillStyle = '#ddd'; ctx.fillRect(st.x-16, st.y+22, 32, 4);
-      ctx.fillStyle = '#B4553F'; ctx.fillRect(st.x-16, st.y+22, 32*Math.max(0,(st.hp||0))/5, 4);
+      ctx.fillStyle = '#ddd'; ctx.fillRect(px-16, py+22, 32, 4);
+      ctx.fillStyle = '#B4553F'; ctx.fillRect(px-16, py+22, 32*Math.max(0,(st.hp||0))/5, 4);
       ctx.restore();
     }
     Object.entries(shooterRemote).forEach(([rid,rp])=> drawPlayer(rid, rp));
