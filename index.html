@@ -394,6 +394,80 @@ Resources:`;for(let t of c){if(!t||typeof t!=`string`)throw Error(`@supabase/aut
   }
   body.theme-retro .btn-primary{ background:var(--leaf); }
   body.theme-retro .btn-primary:hover{ background:#1a130d; }
+
+  /* ============ 主题C：Apple 风（可切换，默认关闭）============
+     配色：接近纯白背景 + 近黑文字 + 克制的系统蓝作为唯一强调色
+     字体：系统字体栈（含 PingFang SC），大标题字重更粗、字距更紧
+     间距：卡片内边距和模块间距明显放大，留白更多
+     组件：按钮变成胶囊形、卡片去阴影/极浅阴影、圆角更大
+     布局：整体不动结构，只换"皮肤"，跟复古风走的是同一套机制 */
+  body.theme-apple{
+    --bg:#F5F5F7; --card:#FFFFFF; --ink:#1D1D1F; --ink-soft:#86868B; --line:#D2D2D7;
+    --leaf:#0071E3; --leaf-light:#CCE4F9; --amber:#FF9F0A; --rest:#E8E8ED; --danger:#FF3B30;
+    --m1:#0071E3; --m2:#32ADE6; --m3:#34C759; --m4:#FF9500; --m5:#AF52DE; --m6:#FF375F;
+    --radius:18px;
+  }
+  body.theme-apple{
+    background-color:var(--bg);
+    background-image:none;
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Text","Helvetica Neue",Arial,"PingFang SC","Microsoft YaHei",sans-serif;
+  }
+  body.theme-apple h1, body.theme-apple .eyebrow, body.theme-apple .wc-word,
+  body.theme-apple .cal-month, body.theme-apple .entry-label, body.theme-apple .dq-label,
+  body.theme-apple .journal-head h2, body.theme-apple .section-head h2, body.theme-apple .panel h2,
+  body.theme-apple .post-author, body.theme-apple .quick-name, body.theme-apple .role-label{
+    font-family:-apple-system,BlinkMacSystemFont,"SF Pro Display","Helvetica Neue",Arial,"PingFang SC","Microsoft YaHei",sans-serif;
+    font-weight:700;
+    letter-spacing:-0.02em;
+  }
+  body.theme-apple h1{ font-weight:700; letter-spacing:-0.03em; }
+  body.theme-apple .eyebrow{ font-family:-apple-system,BlinkMacSystemFont,sans-serif; font-weight:600; letter-spacing:.02em; }
+  /* 卡片：去掉手作纹理感，改成纯白、极浅阴影、更大的圆角 */
+  body.theme-apple .cal-card, body.theme-apple .journal, body.theme-apple .profile-card,
+  body.theme-apple .composer, body.theme-apple .post-card, body.theme-apple .setup-card,
+  body.theme-apple .quick-card, body.theme-apple .overview-card, body.theme-apple .meeting-card,
+  body.theme-apple .chat-card, body.theme-apple .announce-card, body.theme-apple .entry-card,
+  body.theme-apple .role-btn, body.theme-apple .game-card, body.theme-apple .id-btn,
+  body.theme-apple .friend-card, body.theme-apple .theme-swatch-btn{
+    background:var(--card);
+    border:1px solid var(--line);
+    border-radius:18px;
+    box-shadow:0 1px 3px rgba(0,0,0,0.04);
+  }
+  body.theme-apple .cal-card::before, body.theme-apple .journal::before{ display:none; }
+  /* 按钮：胶囊形，去掉圆角矩形那种"手作"边框感 */
+  body.theme-apple .btn, body.theme-apple .tab-btn, body.theme-apple .icon-btn,
+  body.theme-apple .banner-edit-btn, body.theme-apple .np-react, body.theme-apple .uc-vote-btn,
+  body.theme-apple .gender-btn{
+    border-radius:980px;
+  }
+  body.theme-apple .btn-primary{ background:var(--leaf); box-shadow:none; }
+  body.theme-apple .btn-primary:hover{ background:#0077ED; }
+  body.theme-apple .tab-btn.active{ background:var(--leaf); border-color:var(--leaf); }
+  /* 顶部：模拟 Apple 导航栏的半透明毛玻璃感 */
+  body.theme-apple header{
+    background:rgba(245,245,247,0.8);
+    backdrop-filter:blur(20px);
+    -webkit-backdrop-filter:blur(20px);
+    margin:0 -20px 28px;
+    padding:16px 20px 20px;
+    border-bottom:1px solid var(--line);
+  }
+  /* 间距：卡片内边距和模块间距整体放大，呼吸感更强 */
+  body.theme-apple .cal-card, body.theme-apple .profile-card, body.theme-apple .post-card,
+  body.theme-apple .composer, body.theme-apple .setup-card, body.theme-apple .quick-card,
+  body.theme-apple .overview-card, body.theme-apple .meeting-card, body.theme-apple .chat-card,
+  body.theme-apple .announce-card{
+    padding:24px;
+  }
+  body.theme-apple .journal{ margin-top:48px; }
+  body.theme-apple .profile-card{ margin-bottom:28px; }
+  body.theme-apple .entry-card{ padding:28px 16px; }
+  body.theme-apple .avatar-big, body.theme-apple .post-avatar, body.theme-apple .id-dot,
+  body.theme-apple .badge.done{ border:none; box-shadow:none; }
+  body.theme-apple .sub{ color:var(--ink-soft); }
+  body.theme-apple .sub b{ color:var(--ink); font-weight:600; }
+
   .theme-toggle-row{display:flex;gap:10px;flex-wrap:wrap;}
   .theme-swatch-btn{
     flex:1;min-width:140px;border:1px solid var(--line);border-radius:12px;
@@ -726,6 +800,7 @@ function loadTheme(){
 }
 function applyTheme(theme){
   document.body.classList.toggle('theme-retro', theme === 'retro');
+  document.body.classList.toggle('theme-apple', theme === 'apple');
 }
 function saveTheme(theme){
   try{ localStorage.setItem('band-theme', theme); }catch(e){}
@@ -3574,6 +3649,11 @@ function renderMyProfile(body, target){
           <div class="theme-swatch-preview"><span style="background:#A8412E;"></span><span style="background:#E3D2A8;border:1px solid #ddd;"></span></div>
           <div class="theme-swatch-name">复古胶片风</div>
           <div class="theme-swatch-desc">牛皮纸、打字机字体、复古色调</div>
+        </button>
+        <button type="button" class="theme-swatch-btn" data-theme="apple">
+          <div class="theme-swatch-preview"><span style="background:#0071E3;"></span><span style="background:#F5F5F7;border:1px solid #ddd;"></span></div>
+          <div class="theme-swatch-name">极简风（Apple 风格）</div>
+          <div class="theme-swatch-desc">纯白留白、系统字体、胶囊按钮</div>
         </button>
       </div>
     </div>
