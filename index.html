@@ -158,6 +158,40 @@ Resources:`;for(let t of c){if(!t||typeof t!=`string`)throw Error(`@supabase/aut
   .ov-name{font-size:13px;font-weight:500;flex:1;}
   .ov-name small{display:block;font-weight:400;color:var(--ink-soft);font-size:11px;}
   .banner{background:#FDF0E8;border:1px solid #EBC8A6;border-radius:10px;padding:10px 14px;font-size:12.5px;color:#7A4A26;margin-bottom:16px;}
+  /* ---- 夸夸墙入口卡片（放在回忆动态顶部，做得显眼一点） ---- */
+  .praise-entry{display:flex;align-items:center;gap:14px;background:linear-gradient(135deg,#FDF6E8,#F3F8EE);border:1px solid #E8D9A8;border-radius:16px;padding:16px 18px;margin-bottom:18px;cursor:pointer;transition:.15s;}
+  .praise-entry:hover{transform:translateY(-2px);box-shadow:0 6px 18px rgba(120,100,40,.12);}
+  .praise-entry-icon{font-size:32px;flex:0 0 auto;}
+  .praise-entry-main{flex:1;min-width:0;}
+  .praise-entry-title{font-family:'Noto Serif SC',serif;font-weight:700;font-size:17px;}
+  .praise-entry-sub{font-size:12.5px;color:var(--ink-soft);margin-top:2px;}
+  .praise-entry-arrow{font-size:26px;color:var(--ink-soft);flex:0 0 auto;}
+
+  /* ---- 演出通告 ---- */
+  .gig-card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px;margin-bottom:10px;}
+  .gig-card.gig-cancelled,.gig-card.gig-done{opacity:.6;}
+  .gig-head{display:flex;align-items:center;gap:8px;margin-bottom:8px;flex-wrap:wrap;}
+  .gig-title{font-family:'Noto Serif SC',serif;font-weight:700;font-size:16px;flex:1;min-width:0;}
+  .gig-status{font-size:11px;font-weight:700;padding:3px 10px;border-radius:999px;flex:0 0 auto;}
+  .gig-status-pending{background:#FDF0E0;color:#8A5A1E;}
+  .gig-status-confirmed{background:var(--leaf-light);color:#2F4A3D;}
+  .gig-status-done{background:#E4E9E0;color:#5A6B5D;}
+  .gig-status-cancelled{background:#F3DEDA;color:#8B2E1F;}
+  .gig-del{background:none;border:none;color:var(--ink-soft);font-size:11.5px;cursor:pointer;text-decoration:underline;padding:0;}
+  .gig-meta{display:flex;gap:14px;flex-wrap:wrap;font-size:12.5px;color:var(--ink-soft);}
+  .gig-note{font-size:13.5px;line-height:1.6;margin-top:8px;white-space:pre-wrap;}
+  .gig-attend{display:flex;gap:10px;flex-wrap:wrap;font-size:12.5px;margin-top:10px;padding-top:10px;border-top:1px solid var(--line);}
+  .gig-attend-label{color:var(--ink-soft);}
+  .gig-attend-yes{color:var(--leaf);font-weight:500;}
+  .gig-attend-no{color:var(--danger);}
+  .gig-rsvp{display:flex;gap:8px;margin-top:10px;}
+  .gig-rsvp-btn{border:1px solid var(--line);background:#fff;border-radius:999px;padding:6px 14px;font-size:12.5px;cursor:pointer;color:var(--ink-soft);font-family:inherit;}
+  .gig-rsvp-btn:hover{border-color:var(--leaf);color:var(--leaf);}
+  .gig-rsvp-btn.active{background:var(--leaf);border-color:var(--leaf);color:#fff;}
+  .gig-status-row{display:flex;gap:6px;margin-top:10px;flex-wrap:wrap;}
+  .gig-set-status{border:1px solid var(--line);background:#fff;border-radius:999px;padding:4px 11px;font-size:11.5px;cursor:pointer;color:var(--ink-soft);font-family:inherit;}
+  .gig-set-status.active{background:var(--ink);border-color:var(--ink);color:#fff;}
+
   /* ---- 夸夸墙 ---- */
   .praise-podium{display:flex;gap:10px;margin-bottom:16px;}
   .praise-podium-item{flex:1;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 8px;text-align:center;}
@@ -481,6 +515,7 @@ let state = {
   tripSub: 'rehearsal',   // 行程子页：'rehearsal'(排练) | 'teambuild'(团建)
   praises: [],            // 夸夸墙：[{id, toId, fromId, text, ts, likes:[]}]
   ledger: [],             // 乐队小账本：[{id, type:'income'|'expense', amount, note, date, category, byId, ts}]
+  gigs: [],               // 演出通告：[{id,title,date,time,venue,fee,contact,status,note,attendance:{},ts}]
   funGame: null,          // 娱乐吧当前打开的小游戏：null | 'undercover' | 'shooter'
   undercoverGame: null,   // 谁是卧底：共享的当前对局数据（见 getUndercoverGame）
   shooterGame: null,      // 实时对战：共享的当前对局数据（见 getShooterGame）
@@ -500,6 +535,8 @@ function canManageMeetings(){ return state.identity === SCHEDULER_INDEX; }
 function canManageTeambuild(){ return state.identity === TEAMBUILD_INDEX; }
 const LEDGER_INDEX = 0;     // 坤坤 的初始下标，只有他能记账/改账
 function canManageLedger(){ return state.identity === LEDGER_INDEX; }
+const GIG_INDEX = 2;        // 杉菜 的初始下标，只有她能添加/管理演出通告
+function canManageGigs(){ return state.identity === GIG_INDEX; }
 
 /* ---------------- 身份 / 游客 通用工具 ---------------- */
 function isGuestIdentity(id){ return typeof id==='string' && id.indexOf('guest:')===0; }
@@ -668,6 +705,7 @@ function applyRemoteData(data){
   state.shooterGame = data.shooterGame || null;
   state.praises = data.praises || [];
   state.ledger = data.ledger || [];
+  state.gigs = data.gigs || [];
 }
 
 function startRealtimeSync(){
@@ -716,7 +754,7 @@ async function loadAll(){
     return;
   }
   if(!data){
-    data = { members: PRESET_MEMBERS, checkins: {}, meetings: [], posts: [], profiles: {}, guests: [], credentials: {}, messages: [], boards: {}, bandBanner: null, notifications: [], announcement: '', nameProposals: [], freezeTokens: {}, frozenDays: {}, freezeAwardMark: {}, teambuilds: [], dayMemories: {}, undercoverGame: null, shooterGame: null, praises: [], ledger: [] };
+    data = { members: PRESET_MEMBERS, checkins: {}, meetings: [], posts: [], profiles: {}, guests: [], credentials: {}, messages: [], boards: {}, bandBanner: null, notifications: [], announcement: '', nameProposals: [], freezeTokens: {}, frozenDays: {}, freezeAwardMark: {}, teambuilds: [], dayMemories: {}, undercoverGame: null, shooterGame: null, praises: [], ledger: [], gigs: [] };
     try{ await remoteSet(data); }
     catch(e2){
       renderErrorScreen('初始化云端数据失败：' + e2.message);
@@ -745,6 +783,7 @@ async function loadAll(){
   state.shooterGame = data.shooterGame || null;
   state.praises = data.praises || [];
   state.ledger = data.ledger || [];
+  state.gigs = data.gigs || [];
   state.identity = loadIdentity();
   startRealtimeSync();
   renderRoot();
@@ -776,6 +815,7 @@ async function pullLatest(){
       state.shooterGame = data.shooterGame || null;
       state.praises = data.praises || [];
       state.ledger = data.ledger || [];
+      state.gigs = data.gigs || [];
     }
   }catch(e){ /* 拉取失败就先用本地已有数据 */ }
 }
@@ -813,7 +853,8 @@ async function saveAll(){
       undercoverGame: state.undercoverGame,
       shooterGame: state.shooterGame,
       praises: state.praises,
-      ledger: state.ledger
+      ledger: state.ledger,
+      gigs: state.gigs
     }), 15000, '保存');
   }catch(e){
     console.error('保存失败', e);
@@ -1077,6 +1118,7 @@ function openNotifPanel(){
       else if(n.type==='reply') text = `${escapeHtml(from.name)} 回复了你的评论${n.extra? '：'+escapeHtml(n.extra):''}`;
       else if(n.type==='new_guest') text = `🙋 新游客注册：${escapeHtml(from.name)}`;
       else if(n.type==='praise') text = `🌟 ${escapeHtml(from.name)} 在夸夸墙夸了你${n.extra? '：'+escapeHtml(n.extra):''}`;
+      else if(n.type==='new_gig') text = `🎤 杉菜发布了新的演出通告${n.extra? '：'+escapeHtml(n.extra):''}`;
       else text = `${escapeHtml(from.name)} 发布了一条新帖子`;
       return `<div class="member-row" style="align-items:center;">
         <div class="member-info">
@@ -2200,7 +2242,7 @@ function renderScheduleTab(target){
 
 function renderScheduleSubNav(){
   const nav = document.getElementById('scheduleSubNav');
-  const subs = [ ['checkin','日历'], ['meeting','行程'] ];
+  const subs = [ ['checkin','日历'], ['meeting','行程'], ['gig','🎤 演出通告'], ['ledger','💰 小账本'] ];
   nav.innerHTML = subs.map(([k,l])=>`<button class="tab-btn sub-tab ${state.scheduleSub===k?'active':''}" data-sub="${k}">${l}</button>`).join('');
   nav.querySelectorAll('.sub-tab').forEach(b=>{
     b.onclick = ()=>{ state.scheduleSub = b.dataset.sub; renderScheduleSubNav(); renderScheduleSubBody(); };
@@ -2209,6 +2251,8 @@ function renderScheduleSubNav(){
 
 function renderScheduleSubBody(){
   const body = document.getElementById('scheduleSubBody');
+  if(state.scheduleSub==='ledger'){ renderLedger(body); return; }
+  if(state.scheduleSub==='gig'){ renderGigBoard(body); return; }
   if(state.scheduleSub==='meeting'){
     body.innerHTML = `
       <div class="tabs" id="tripSubNav"></div>
@@ -2937,23 +2981,31 @@ function renderMemoriesTab(target){
     <div class="tabs" id="memoriesSubNav">
       <button class="tab-btn ${state.memoriesSub==='feed'?'active':''}" id="memSubFeed">回忆动态</button>
       <button class="tab-btn ${state.memoriesSub==='praise'?'active':''}" id="memSubPraise">🌟 夸夸墙</button>
-      <button class="tab-btn ${state.memoriesSub==='ledger'?'active':''}" id="memSubLedger">💰 小账本</button>
       <button class="tab-btn ${state.memoriesSub==='contest'?'active':''}" id="memSubContest">🎤 限时征集：团体名字</button>
     </div>
     <div id="memoriesSubBody"></div>
   `;
   document.getElementById('memSubFeed').onclick = ()=>{ state.memoriesSub='feed'; renderMemoriesTab(target); };
   document.getElementById('memSubPraise').onclick = ()=>{ state.memoriesSub='praise'; renderMemoriesTab(target); };
-  document.getElementById('memSubLedger').onclick = ()=>{ state.memoriesSub='ledger'; renderMemoriesTab(target); };
   document.getElementById('memSubContest').onclick = ()=>{ state.memoriesSub='contest'; renderMemoriesTab(target); };
   const body = document.getElementById('memoriesSubBody');
   if(state.memoriesSub==='contest'){ renderNameContest(body); return; }
   if(state.memoriesSub==='praise'){ renderPraiseWall(body); return; }
-  if(state.memoriesSub==='ledger'){ renderLedger(body); return; }
+  const praiseCount = (state.praises||[]).length;
+  const myPraises = (state.praises||[]).filter(p=>String(p.toId)===String(state.identity)).length;
   body.innerHTML = `
+    <div class="praise-entry" id="praiseEntry">
+      <div class="praise-entry-icon">🌟</div>
+      <div class="praise-entry-main">
+        <div class="praise-entry-title">夸夸墙</div>
+        <div class="praise-entry-sub">${praiseCount? `大家一共写了 ${praiseCount} 条夸奖${myPraises? `，其中 ${myPraises} 条是夸你的` : ''}` : '还没有人夸过队友，来当第一个吧'}</div>
+      </div>
+      <div class="praise-entry-arrow">›</div>
+    </div>
     <div class="composer" id="composer"></div>
     <div id="postList"></div>
   `;
+  document.getElementById('praiseEntry').onclick = ()=>{ state.memoriesSub='praise'; renderMemoriesTab(target); };
   renderComposer();
   renderPostList();
 }
@@ -3043,6 +3095,127 @@ function renderPraiseWall(body){
       state.praises = state.praises.filter(x=>x.id!==b.dataset.id);
       await queueSave();
       renderPraiseWall(body);
+    };
+  });
+}
+
+/* ---------------- 演出通告：只有杉菜能添加/管理，其他人可以看+报到场情况 ---------------- */
+const GIG_STATUS = { pending:'洽谈中', confirmed:'已确认', done:'已完成', cancelled:'已取消' };
+
+function renderGigBoard(body){
+  const canEdit = canManageGigs();
+  const mine = state.identity;
+  const list = [...(state.gigs||[])].sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+  const upcoming = list.filter(g=>g.status!=='done' && g.status!=='cancelled');
+  const past = list.filter(g=>g.status==='done' || g.status==='cancelled');
+
+  function gigCard(g){
+    const att = g.attendance || {};
+    const yes = state.members.filter((m,i)=>att[i]==='yes');
+    const no = state.members.filter((m,i)=>att[i]==='no');
+    const myAtt = att[mine];
+    const canRSVP = !isGuestIdentity(mine) && g.status!=='done' && g.status!=='cancelled';
+    return `<div class="gig-card gig-${g.status}">
+      <div class="gig-head">
+        <span class="gig-status gig-status-${g.status}">${GIG_STATUS[g.status]||g.status}</span>
+        <span class="gig-title">${escapeHtml(g.title)}</span>
+        ${canEdit? `<button type="button" class="gig-del" data-id="${g.id}">删除</button>`:''}
+      </div>
+      <div class="gig-meta">
+        <span>📅 ${g.date}${g.time? ' '+g.time:''}</span>
+        ${g.venue? `<span>📍 ${escapeHtml(g.venue)}</span>`:''}
+        ${g.fee? `<span>💰 ${escapeHtml(String(g.fee))}</span>`:''}
+        ${g.contact? `<span>☎️ ${escapeHtml(g.contact)}</span>`:''}
+      </div>
+      ${g.note? `<div class="gig-note">${escapeHtml(g.note)}</div>`:''}
+      <div class="gig-attend">
+        <span class="gig-attend-label">到场：</span>
+        <span class="gig-attend-yes">✅ ${yes.length? yes.map(m=>escapeHtml(m.name)).join('、') : '暂无'}</span>
+        ${no.length? `<span class="gig-attend-no">❌ ${no.map(m=>escapeHtml(m.name)).join('、')}</span>`:''}
+      </div>
+      ${canRSVP? `<div class="gig-rsvp">
+        <button type="button" class="gig-rsvp-btn ${myAtt==='yes'?'active':''}" data-id="${g.id}" data-v="yes">我能到</button>
+        <button type="button" class="gig-rsvp-btn ${myAtt==='no'?'active':''}" data-id="${g.id}" data-v="no">我去不了</button>
+      </div>`:''}
+      ${canEdit? `<div class="gig-status-row">
+        ${Object.entries(GIG_STATUS).map(([k,v])=>`<button type="button" class="gig-set-status ${g.status===k?'active':''}" data-id="${g.id}" data-s="${k}">${v}</button>`).join('')}
+      </div>`:''}
+    </div>`;
+  }
+
+  body.innerHTML = `
+    ${canEdit? `
+      <div class="composer">
+        <div class="ledger-form">
+          <div class="cfg-field"><label>演出名称</label><input type="text" id="ggTitle" placeholder="比如：校庆晚会"></div>
+          <div class="cfg-field"><label>日期</label><input type="date" id="ggDate"></div>
+          <div class="cfg-field"><label>时间</label><input type="time" id="ggTime" value="19:00"></div>
+          <div class="cfg-field"><label>报酬</label><input type="text" id="ggFee" placeholder="比如：2000元 / 无"></div>
+        </div>
+        <div class="ledger-form" style="margin-top:10px;">
+          <div class="cfg-field" style="grid-column:span 2;"><label>地点</label><input type="text" id="ggVenue" placeholder="演出场地"></div>
+          <div class="cfg-field" style="grid-column:span 2;"><label>对接人/联系方式</label><input type="text" id="ggContact" placeholder="主办方联系人"></div>
+        </div>
+        <div class="cfg-field" style="margin-top:10px;"><label>备注</label><input type="text" id="ggNote" placeholder="曲目要求、几点到场、需不需要自带设备…"></div>
+        <div class="composer-row" style="justify-content:flex-end;">
+          <button class="btn btn-primary" id="ggAdd" style="width:auto;padding:8px 20px;">添加通告</button>
+        </div>
+      </div>
+    ` : `<div class="banner">🎤 演出通告由杉菜统一对接和管理，大家可以查看详情，并点"我能到 / 我去不了"报一下自己的情况。</div>`}
+    <div class="section-head"><h2>即将到来</h2></div>
+    <div id="gigUpcoming">${upcoming.length? upcoming.map(gigCard).join('') : '<div class="empty-hint">暂时没有待办的演出通告</div>'}</div>
+    ${past.length? `<div class="section-head"><h2>已结束</h2></div><div id="gigPast">${past.map(gigCard).join('')}</div>` : ''}
+  `;
+
+  if(canEdit){
+    const d = new Date();
+    document.getElementById('ggDate').value = `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+    document.getElementById('ggAdd').onclick = async ()=>{
+      const title = document.getElementById('ggTitle').value.trim();
+      const date = document.getElementById('ggDate').value;
+      if(!title || !date){ alert('演出名称和日期不能为空'); return; }
+      state.gigs = state.gigs || [];
+      state.gigs.push({
+        id:'gg_'+Date.now(), title, date,
+        time: document.getElementById('ggTime').value,
+        venue: document.getElementById('ggVenue').value.trim(),
+        fee: document.getElementById('ggFee').value.trim(),
+        contact: document.getElementById('ggContact').value.trim(),
+        note: document.getElementById('ggNote').value.trim(),
+        status:'pending', attendance:{}, ts: Date.now()
+      });
+      allPeople().forEach(p=>{ addNotif(p.id, 'new_gig', mine, null, title.slice(0,20)); });
+      await queueSave();
+      renderGigBoard(body);
+      renderNotifBell();
+    };
+  }
+  body.querySelectorAll('.gig-del').forEach(b=>{
+    b.onclick = async ()=>{
+      if(!confirm('删除这条演出通告吗？')) return;
+      state.gigs = state.gigs.filter(x=>x.id!==b.dataset.id);
+      await queueSave();
+      renderGigBoard(body);
+    };
+  });
+  body.querySelectorAll('.gig-rsvp-btn').forEach(b=>{
+    b.onclick = async ()=>{
+      const g = state.gigs.find(x=>x.id===b.dataset.id);
+      if(!g) return;
+      g.attendance = g.attendance || {};
+      if(g.attendance[mine]===b.dataset.v) delete g.attendance[mine];
+      else g.attendance[mine] = b.dataset.v;
+      await queueSave();
+      renderGigBoard(body);
+    };
+  });
+  body.querySelectorAll('.gig-set-status').forEach(b=>{
+    b.onclick = async ()=>{
+      const g = state.gigs.find(x=>x.id===b.dataset.id);
+      if(!g) return;
+      g.status = b.dataset.s;
+      await queueSave();
+      renderGigBoard(body);
     };
   });
 }
