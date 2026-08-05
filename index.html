@@ -657,6 +657,57 @@ function fileToResizedDataURL(file, maxDim=760, quality=0.72){
   });
 }
 
+/* ---------------- 图片存储：改存 Supabase Storage，不再塞进数据库 ----------------
+   之前所有照片都是压缩成 base64 文本，跟打卡记录挤在同一份 JSON 里。
+   照片一多，每个人每次打开网站都得把所有照片一起下载下来，越用越慢。
+   现在改成：图片单独上传到 Supabase Storage，数据库里只存一个很短的网址。
+
+   ⚠️ 需要在 Supabase 后台做一次设置（只要做一次）：
+   1. 左侧菜单 Storage → New bucket，名字填 band-photos
+   2. 勾选 Public bucket（公开），这样图片才能直接显示出来
+   3. 建好之后就不用管了
+
+   如果这个 bucket 没建好、或者上传失败，代码会自动退回到老办法
+   （压缩成 base64 存数据库），保证功能不会因此坏掉。 */
+const STORAGE_BUCKET = 'band-photos';
+
+/* 把 canvas/dataURL 转成可上传的二进制块 */
+function dataURLToBlob(dataUrl){
+  const [head, body] = dataUrl.split(',');
+  const mime = (head.match(/:(.*?);/)||[null,'image/jpeg'])[1];
+  const bin = atob(body);
+  const arr = new Uint8Array(bin.length);
+  for(let i=0;i<bin.length;i++) arr[i] = bin.charCodeAt(i);
+  return new Blob([arr], {type:mime});
+}
+
+/* 上传一张图片，返回可直接放进 <img src> 的网址；失败时返回 null 让调用方走兜底 */
+async function uploadImage(dataUrl, folder){
+  if(!dataUrl) return null;
+  if(!dataUrl.startsWith('data:')) return dataUrl; // 已经是网址了，不用重复上传
+  try{
+    const blob = dataURLToBlob(dataUrl);
+    const ext = blob.type.includes('png') ? 'png' : 'jpg';
+    const path = `${folder}/${Date.now()}_${Math.random().toString(36).slice(2,8)}.${ext}`;
+    const { error } = await supabaseClient.storage.from(STORAGE_BUCKET)
+      .upload(path, blob, { contentType: blob.type, upsert:false });
+    if(error) throw error;
+    const { data } = supabaseClient.storage.from(STORAGE_BUCKET).getPublicUrl(path);
+    return (data && data.publicUrl) ? data.publicUrl : null;
+  }catch(e){
+    console.warn('图片上传到 Storage 失败，退回存数据库的老办法：', e.message);
+    return null;
+  }
+}
+
+/* 统一入口：压缩 → 上传 → 拿到网址；上传不成功就退回 base64，功能不会坏 */
+async function prepareImage(file, folder, maxDim, quality){
+  const dataUrl = await fileToResizedDataURL(file, maxDim, quality);
+  if(!dataUrl) return null;
+  const url = await uploadImage(dataUrl, folder);
+  return url || dataUrl;
+}
+
 /* ---------------- REMOTE STORAGE (Supabase) ---------------- */
 async function remoteGet(){
   const { data, error } = await supabaseClient
@@ -1186,7 +1237,7 @@ function renderHome(target){
     const file = ev.target.files[0];
     if(!file) return;
     try{
-      const dataUrl = await fileToResizedDataURL(file, 1200, 0.75);
+      const dataUrl = await prepareImage(file, 'banner', 1200, 0.75);
       state.bandBanner = dataUrl;
       await queueSave();
       renderHome(target);
@@ -2448,7 +2499,7 @@ function openTripDayPanel(key){
       const file = ev.target.files[0];
       if(!file) return;
       try{
-        const src = await fileToResizedDataURL(file, 700, 0.7);
+        const src = await prepareImage(file, 'trips', 700, 0.7);
         const mt = (state[cfg.key]||[]).find(x=>x.id===inp.dataset.mt);
         if(mt){
           mt.photos = mt.photos || [];
@@ -2668,7 +2719,7 @@ function openMemoryDayPanel(key){
     if(!file){ alert('选张照片吧'); return; }
     const caption = document.getElementById('memPhotoCaption').value.trim();
     try{
-      const src = await fileToResizedDataURL(file, 700, 0.7);
+      const src = await prepareImage(file, 'memories', 700, 0.7);
       state.dayMemories[key] = state.dayMemories[key] || [];
       state.dayMemories[key].push({ id:'mp_'+Date.now(), src, caption, authorIdx: state.identity, ts: Date.now() });
       await queueSave();
@@ -3399,7 +3450,7 @@ function renderComposer(){
     if(!file) return;
     document.getElementById('photoFileName').textContent = file.name;
     try{
-      pendingPhoto = await fileToResizedDataURL(file);
+      pendingPhoto = await prepareImage(file, 'posts', 760, 0.72);
       const prev = document.getElementById('photoPreview');
       prev.src = pendingPhoto; prev.style.display = 'block';
     }catch(err){ alert('图片处理失败：' + err.message); }
@@ -3600,7 +3651,7 @@ function renderBoardSection(container, personId, editable){
       if(imgInput) imgInput.addEventListener('change', async ev=>{
         const file = ev.target.files[0]; if(!file) return;
         try{
-          const src = await fileToResizedDataURL(file, 480, 0.72);
+          const src = await prepareImage(file, 'boards', 480, 0.72);
           board.elements.push({ id:'el_'+Date.now(), type:'image', src, x:50, y:50, rot:0, scale:1, z: nextZ(board) });
           await queueSave();
           paint();
@@ -3728,6 +3779,7 @@ function renderBoardSection(container, personId, editable){
     // 先把板子上已有的涂鸦画上去，这样是接着画，不是从空白开始
     if(board.doodle){
       const img = new Image();
+      img.crossOrigin = 'anonymous'; // 图片改存 Storage 后是跨域的，不加这句再次涂鸦时会导不出画布
       img.onload = ()=>{ ctx.drawImage(img, 0, 0, canvas.width, canvas.height); };
       img.src = board.doodle;
     }
@@ -3768,7 +3820,8 @@ function renderBoardSection(container, personId, editable){
     toolbar.querySelector('#doodleCancelBtn').onclick = ()=>{ doodleMode = false; paint(); };
     toolbar.querySelector('#doodleDoneBtn').onclick = async ()=>{
       // 直接存成板子自己的涂鸦图层，不是一个可以拖拽的贴图元素
-      board.doodle = canvas.toDataURL('image/png');
+      const doodleData = canvas.toDataURL('image/png');
+      board.doodle = (await uploadImage(doodleData, 'boards')) || doodleData;
       doodleMode = false;
       await queueSave();
       paint();
@@ -3943,7 +3996,7 @@ function renderMyProfile(body, target){
     const file = ev.target.files[0];
     if(!file) return;
     try{
-      pendingAvatar = await fileToResizedDataURL(file, 300, 0.8);
+      pendingAvatar = await prepareImage(file, 'avatars', 300, 0.8);
       document.getElementById('avatarBtn').innerHTML = `<img src="${pendingAvatar}">`;
     }catch(err){ alert('头像处理失败：' + err.message); }
   });
