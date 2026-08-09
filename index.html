@@ -166,6 +166,23 @@ Resources:`;for(let t of c){if(!t||typeof t!=`string`)throw Error(`@supabase/aut
   .ov-name{font-size:13px;font-weight:500;flex:1;}
   .ov-name small{display:block;font-weight:400;color:var(--ink-soft);font-size:11px;}
   .banner{background:#FDF0E8;border:1px solid #EBC8A6;border-radius:10px;padding:10px 14px;font-size:12.5px;color:#7A4A26;margin-bottom:16px;}
+  /* ---- 首页看板 ---- */
+  .dash-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(200px,1fr));gap:12px;margin-bottom:18px;}
+  .dash-card{display:flex;align-items:center;gap:12px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 16px;cursor:pointer;transition:.15s;}
+  .dash-card:hover{border-color:var(--leaf);transform:translateY(-2px);}
+  .dash-icon{font-size:26px;flex:0 0 auto;}
+  .dash-body{min-width:0;flex:1;}
+  .dash-label{font-size:11.5px;color:var(--ink-soft);}
+  .dash-value{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:20px;line-height:1.2;color:var(--leaf);}
+  .dash-sub{font-size:11.5px;color:var(--ink-soft);margin-top:2px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;}
+
+  /* ---- 分工分配 / 数据维护 ---- */
+  .role-assign-list{display:flex;flex-direction:column;gap:10px;}
+  .role-assign-row{display:flex;align-items:center;gap:12px;}
+  .role-assign-label{flex:1;font-size:14px;font-weight:500;}
+  .role-assign-select{border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-size:13.5px;font-family:inherit;background:#fff;color:var(--ink);flex:0 0 auto;min-width:110px;}
+  .maintenance-log{margin-top:12px;font-size:12.5px;color:var(--ink-soft);line-height:1.7;}
+
   /* ---- 曲库 ---- */
   .song-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px;}
   .song-stat{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;text-align:center;}
@@ -597,6 +614,7 @@ let state = {
   gigs: [],               // 演出通告：[{id,title,date,time,venue,fee,contact,status,note,attendance:{},ts}]
   songs: null,            // 曲库：[{id,title,artist,status,note,ts}]，null 表示还没初始化过
   showPublic: true,       // 没登录时先看对外展示页，点"进入内部小站"才去登录
+  roles: null,            // 各模块负责人（管理员可改），null 表示用默认分工
   funGame: null,          // 娱乐吧当前打开的小游戏：null | 'undercover' | 'shooter'
   undercoverGame: null,   // 谁是卧底：共享的当前对局数据（见 getUndercoverGame）
   shooterGame: null,      // 实时对战：共享的当前对局数据（见 getShooterGame）
@@ -607,19 +625,26 @@ let state = {
   identity: undefined
 };
 
-const ADMIN_INDEX = 5;      // 管理员 的初始下标（改名后权限仍跟着这个位置走）
-const SCHEDULER_INDEX = 1;  // 小鱼 的初始下标，负责排练
-const TEAMBUILD_INDEX = 3;  // 包菜 的初始下标，负责团建
+const ADMIN_INDEX = 5;      // 管理员的位置固定不变（他负责分配其他人的权限，不能被改掉）
 const DEFAULT_PASSWORD = 'pgdpg402';
+
+/* 各模块的负责人：默认按当初的分工，之后管理员可以在界面上随时重新分配。
+   存进共享数据里，所有人看到的分工是一致的。 */
+const DEFAULT_ROLES = { ledger:0, meeting:1, gig:2, teambuild:3, song:4 };
+const ROLE_LABELS = {
+  ledger:'💰 小账本', meeting:'🎸 排练安排', gig:'🎤 演出通告',
+  teambuild:'🍻 团建安排', song:'🎵 曲库'
+};
+function getRoles(){ return Object.assign({}, DEFAULT_ROLES, state.roles||{}); }
+function roleHolder(key){ return getRoles()[key]; }
+function hasRole(key){ return state.identity === roleHolder(key); }
+
 function isAdmin(){ return state.identity === ADMIN_INDEX; }
-function canManageMeetings(){ return state.identity === SCHEDULER_INDEX; }
-function canManageTeambuild(){ return state.identity === TEAMBUILD_INDEX; }
-const LEDGER_INDEX = 0;     // 坤坤 的初始下标，只有他能记账/改账
-function canManageLedger(){ return state.identity === LEDGER_INDEX; }
-const GIG_INDEX = 2;        // 杉菜 的初始下标，只有她能添加/管理演出通告
-function canManageGigs(){ return state.identity === GIG_INDEX; }
-const SONG_INDEX = 4;       // 柜子羊 的初始下标，只有他能添加/管理曲库
-function canManageSongs(){ return state.identity === SONG_INDEX; }
+function canManageMeetings(){ return hasRole('meeting'); }
+function canManageTeambuild(){ return hasRole('teambuild'); }
+function canManageLedger(){ return hasRole('ledger'); }
+function canManageGigs(){ return hasRole('gig'); }
+function canManageSongs(){ return hasRole('song'); }
 
 /* ---------------- 身份 / 游客 通用工具 ---------------- */
 function isGuestIdentity(id){ return typeof id==='string' && id.indexOf('guest:')===0; }
@@ -841,6 +866,7 @@ function applyRemoteData(data){
   state.ledger = data.ledger || [];
   state.gigs = data.gigs || [];
   state.songs = data.songs || DEFAULT_SONGS;
+  state.roles = data.roles || DEFAULT_ROLES;
 }
 
 function startRealtimeSync(){
@@ -889,7 +915,7 @@ async function loadAll(){
     return;
   }
   if(!data){
-    data = { members: PRESET_MEMBERS, checkins: {}, meetings: [], posts: [], profiles: {}, guests: [], credentials: {}, messages: [], boards: {}, bandBanner: null, notifications: [], announcement: '', nameProposals: [], freezeTokens: {}, frozenDays: {}, freezeAwardMark: {}, teambuilds: [], dayMemories: {}, undercoverGame: null, shooterGame: null, praises: [], ledger: [], gigs: [], songs: DEFAULT_SONGS };
+    data = { members: PRESET_MEMBERS, checkins: {}, meetings: [], posts: [], profiles: {}, guests: [], credentials: {}, messages: [], boards: {}, bandBanner: null, notifications: [], announcement: '', nameProposals: [], freezeTokens: {}, frozenDays: {}, freezeAwardMark: {}, teambuilds: [], dayMemories: {}, undercoverGame: null, shooterGame: null, praises: [], ledger: [], gigs: [], songs: DEFAULT_SONGS, roles: DEFAULT_ROLES };
     try{ await remoteSet(data); }
     catch(e2){
       renderErrorScreen('初始化云端数据失败：' + e2.message);
@@ -920,6 +946,7 @@ async function loadAll(){
   state.ledger = data.ledger || [];
   state.gigs = data.gigs || [];
   state.songs = data.songs || DEFAULT_SONGS;
+  state.roles = data.roles || DEFAULT_ROLES;
   state.identity = loadIdentity();
   startRealtimeSync();
   renderRoot();
@@ -953,6 +980,7 @@ async function pullLatest(){
       state.ledger = data.ledger || [];
       state.gigs = data.gigs || [];
       state.songs = data.songs || DEFAULT_SONGS;
+      state.roles = data.roles || DEFAULT_ROLES;
     }
   }catch(e){ /* 拉取失败就先用本地已有数据 */ }
 }
@@ -992,7 +1020,8 @@ async function saveAll(){
       praises: state.praises,
       ledger: state.ledger,
       gigs: state.gigs,
-      songs: state.songs
+      songs: state.songs,
+      roles: state.roles
     }), 15000, '保存');
   }catch(e){
     console.error('保存失败', e);
@@ -1364,6 +1393,75 @@ function renderMainBody(){
   }
 }
 
+/* 首页看板：把六个人各管一摊的关键信息汇总到一处，一进来就知道该干嘛 */
+function renderDashboard(){
+  const now = TODAY;
+  const todayKey = dateKey(now.getFullYear(), now.getMonth(), now.getDate());
+  const cards = [];
+
+  // 今天还有谁没打卡（只在暑期打卡月份显示）
+  if(isCheckinMonth(now.getMonth())){
+    const entries = getEntries(todayKey);
+    const missing = (state.members||[]).filter((m,i)=>!entries[i] || !entries[i].checked);
+    cards.push({
+      icon: missing.length? '⏰' : '🎉',
+      label: '今日打卡',
+      value: `${(state.members||[]).length - missing.length}/${(state.members||[]).length}`,
+      sub: missing.length? `还差 ${missing.map(m=>m.name).join('、')}` : '全员完成，漂亮！',
+      tab: 'schedule', sub2:'checkin'
+    });
+  }
+
+  // 最近一场确认的演出
+  const nextGig = (state.gigs||[])
+    .filter(g=>g.status==='confirmed' && g.date>=todayKey)
+    .sort((a,b)=>(a.date||'').localeCompare(b.date||''))[0];
+  if(nextGig){
+    const days = Math.round((new Date(nextGig.date) - new Date(todayKey))/86400000);
+    cards.push({
+      icon:'🎤', label:'下一场演出',
+      value: days===0? '就是今天' : `${days} 天后`,
+      sub: nextGig.title, tab:'schedule', sub2:'gig'
+    });
+  }
+
+  // 曲库进度
+  const songs = state.songs||[];
+  if(songs.length){
+    const ready = songs.filter(s=>s.status==='stage'||s.status==='rehearsed').length;
+    cards.push({
+      icon:'🎵', label:'曲库',
+      value:`${ready}/${songs.length}`,
+      sub:`${songs.filter(s=>s.status==='upcoming').length} 首待练`,
+      tab:'schedule', sub2:'song'
+    });
+  }
+
+  // 账本结余
+  const ledger = state.ledger||[];
+  if(ledger.length){
+    const inc = ledger.filter(x=>x.type==='income').reduce((s,x)=>s+Number(x.amount||0),0);
+    const exp = ledger.filter(x=>x.type==='expense').reduce((s,x)=>s+Number(x.amount||0),0);
+    const bal = inc-exp;
+    cards.push({
+      icon:'💰', label:'账本结余',
+      value:(Math.round(bal*100)/100).toLocaleString('zh-CN'),
+      sub:`共 ${ledger.length} 笔记录`, tab:'schedule', sub2:'ledger'
+    });
+  }
+
+  if(!cards.length) return '';
+  return `<div class="dash-grid">${cards.map((c,i)=>`
+    <div class="dash-card" data-tab="${c.tab}" data-sub="${c.sub2||''}">
+      <div class="dash-icon">${c.icon}</div>
+      <div class="dash-body">
+        <div class="dash-label">${c.label}</div>
+        <div class="dash-value">${escapeHtml(String(c.value))}</div>
+        <div class="dash-sub">${escapeHtml(c.sub||'')}</div>
+      </div>
+    </div>`).join('')}</div>`;
+}
+
 function renderHome(target){
   const canEditAnnounce = isAdmin();
   target.innerHTML = `
@@ -1372,6 +1470,7 @@ function renderHome(target){
       <button class="banner-edit-btn" id="bannerEditBtn" type="button">更换封面图</button>
       <input type="file" accept="image/*" id="bannerInput" style="display:none;">
     </div>
+    ${renderDashboard()}
     <div class="home-entries">
       <div class="entry-card" data-tab="schedule"><div class="entry-icon">📅</div><div class="entry-label">日程</div><div class="entry-sub">日历 · 行程</div></div>
       <div class="entry-card" data-tab="memories"><div class="entry-icon">📸</div><div class="entry-label">回忆</div><div class="entry-sub">帖子 · 分享</div></div>
@@ -1386,6 +1485,13 @@ function renderHome(target){
   `;
   target.querySelectorAll('.entry-card').forEach(c=>{
     c.onclick = ()=>{ state.activeTab = c.dataset.tab; renderMainBody(); };
+  });
+  target.querySelectorAll('.dash-card').forEach(c=>{
+    c.onclick = ()=>{
+      state.activeTab = c.dataset.tab;
+      if(c.dataset.sub) state.scheduleSub = c.dataset.sub;
+      renderMainBody();
+    };
   });
   document.getElementById('bannerEditBtn').onclick = ()=> document.getElementById('bannerInput').click();
   document.getElementById('bannerInput').addEventListener('change', async (ev)=>{
@@ -3306,6 +3412,105 @@ function renderPraiseWall(body){
   });
 }
 
+/* ---------------- 数据维护：备份导出 + 老照片迁移（都只有管理员能用）---------------- */
+function maintLog(msg){
+  const box = document.getElementById('maintenanceLog');
+  if(box) box.innerHTML += `<div>${escapeHtml(msg)}</div>`;
+}
+
+/* 把整份数据下载成一个 json 文件存起来。数据库里只有一份数据、没有历史版本，
+   万一哪次误操作或保存出错就找不回来了，定期导出一次是最省事的保险。 */
+function exportAllData(){
+  try{
+    const payload = {
+      exportedAt: new Date().toISOString(),
+      members: state.members, checkins: state.checkins, meetings: state.meetings,
+      posts: state.posts, profiles: state.profiles, guests: state.guests,
+      credentials: state.credentials, messages: state.messages, boards: state.boards,
+      bandBanner: state.bandBanner, notifications: state.notifications,
+      announcement: state.announcement, nameProposals: state.nameProposals,
+      freezeTokens: state.freezeTokens, frozenDays: state.frozenDays,
+      freezeAwardMark: state.freezeAwardMark, teambuilds: state.teambuilds,
+      dayMemories: state.dayMemories, praises: state.praises, ledger: state.ledger,
+      gigs: state.gigs, songs: state.songs, roles: state.roles
+    };
+    const blob = new Blob([JSON.stringify(payload, null, 2)], {type:'application/json'});
+    const a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    const d = new Date();
+    a.download = `皮菇文化备份_${d.getFullYear()}${pad(d.getMonth()+1)}${pad(d.getDate())}.json`;
+    a.click();
+    setTimeout(()=>URL.revokeObjectURL(a.href), 5000);
+    maintLog('✅ 备份文件已开始下载，建议存到网盘或者发到群里留档。');
+  }catch(e){
+    maintLog('❌ 导出失败：' + e.message);
+  }
+}
+
+/* 把早期直接存在数据库里的 base64 老照片，批量搬到 Supabase Storage，
+   只保留一个短网址。这样那份共享数据会瘦身很多，所有人打开网站都会更快。 */
+async function migrateOldPhotos(){
+  if(!confirm('要把早期存在数据库里的老照片搬到图片存储吗？\n照片多的话可能要几分钟，中途请不要关页面。')) return;
+  const box = document.getElementById('maintenanceLog');
+  if(box) box.innerHTML = '';
+  maintLog('开始扫描…');
+  let moved = 0, failed = 0, scanned = 0;
+
+  async function move(dataUrl, folder){
+    scanned++;
+    const url = await uploadImage(dataUrl, folder);
+    if(url && url !== dataUrl){ moved++; return url; }
+    failed++; return dataUrl;
+  }
+  const isOld = (v)=> typeof v==='string' && v.startsWith('data:');
+
+  try{
+    // 头像
+    for(const key of Object.keys(state.profiles||{})){
+      const p = state.profiles[key];
+      if(p && isOld(p.avatar)) p.avatar = await move(p.avatar, 'avatars');
+    }
+    // 首页封面
+    if(isOld(state.bandBanner)) state.bandBanner = await move(state.bandBanner, 'banner');
+    // 帖子配图
+    for(const p of (state.posts||[])){
+      if(isOld(p.photo)) p.photo = await move(p.photo, 'posts');
+    }
+    // 展示墙贴图 + 涂鸦
+    for(const key of Object.keys(state.boards||{})){
+      const b = state.boards[key];
+      if(!b) continue;
+      for(const el of (b.elements||[])){
+        if(el.type==='image' && isOld(el.src)) el.src = await move(el.src, 'boards');
+      }
+      if(isOld(b.doodle)) b.doodle = await move(b.doodle, 'boards');
+    }
+    // 共同回忆照片
+    for(const key of Object.keys(state.dayMemories||{})){
+      for(const ph of (state.dayMemories[key]||[])){
+        if(isOld(ph.src)) ph.src = await move(ph.src, 'memories');
+      }
+    }
+    // 行程照片（排练 + 团建）
+    for(const arr of [state.meetings||[], state.teambuilds||[]]){
+      for(const mt of arr){
+        for(const ph of (mt.photos||[])){
+          if(isOld(ph.src)) ph.src = await move(ph.src, 'trips');
+        }
+      }
+    }
+
+    if(scanned===0){ maintLog('没有找到需要迁移的老照片，说明早就都是新方案了 👍'); return; }
+    maintLog(`扫描到 ${scanned} 张老照片，成功搬走 ${moved} 张${failed? `，失败 ${failed} 张（这些会保持原样，不影响使用）`:''}。`);
+    if(moved>0){
+      await queueSave();
+      maintLog('✅ 已保存。刷新页面后应该会明显变快。');
+    }
+  }catch(e){
+    maintLog('❌ 迁移中断：' + e.message + '（已搬走的部分不会丢，可以再点一次继续）');
+  }
+}
+
 /* ---------------- 曲库：我们会哪些歌、练到什么程度 ---------------- */
 function renderSongLibrary(body){
   const canEdit = canManageSongs(); // 只有柜子羊能维护曲库，其他人只能看
@@ -4190,7 +4395,43 @@ function renderMyProfile(body, target){
       <div class="cfg-field"><label>确认新密码</label><input type="password" id="newPwd2" placeholder="再输一遍"></div>
       <div class="panel-actions" style="margin-top:14px;"><button class="btn btn-primary" id="changePwdBtn" style="flex:1;">修改密码</button></div>
     </div>
+    ${isAdmin()? `
+    <div class="profile-card">
+      <div class="section-head"><h2>🛡️ 分工分配</h2></div>
+      <p class="sub" style="margin-bottom:12px;">每个模块只有被指定的人能增删改，其他人只能看。改完立刻对所有人生效。</p>
+      <div class="role-assign-list">
+        ${Object.entries(ROLE_LABELS).map(([key,label])=>`
+          <div class="role-assign-row">
+            <div class="role-assign-label">${label}</div>
+            <select class="role-assign-select" data-key="${key}">
+              ${(state.members||[]).map((m,idx)=>`<option value="${idx}" ${roleHolder(key)===idx?'selected':''}>${escapeHtml(m.name)}</option>`).join('')}
+            </select>
+          </div>`).join('')}
+      </div>
+    </div>
+    <div class="profile-card">
+      <div class="section-head"><h2>🗄️ 数据维护</h2></div>
+      <p class="sub" style="margin-bottom:12px;">备份是为了防止误操作丢数据；迁移是把早期存在数据库里的老照片搬到图片存储，能让网站变快。</p>
+      <div class="panel-actions" style="flex-wrap:wrap;">
+        <button class="btn btn-ghost" id="exportDataBtn" style="flex:1;min-width:140px;">⬇️ 导出全部数据</button>
+        <button class="btn btn-ghost" id="migratePhotosBtn" style="flex:1;min-width:140px;">🚚 迁移老照片</button>
+      </div>
+      <div id="maintenanceLog" class="maintenance-log"></div>
+    </div>
+    `:''}
   `;
+  if(isAdmin()){
+    body.querySelectorAll('.role-assign-select').forEach(sel=>{
+      sel.onchange = async ()=>{
+        state.roles = getRoles();
+        state.roles[sel.dataset.key] = Number(sel.value);
+        await queueSave();
+        alert('分工已更新');
+      };
+    });
+    document.getElementById('exportDataBtn').onclick = exportAllData;
+    document.getElementById('migratePhotosBtn').onclick = migrateOldPhotos;
+  }
   document.getElementById('changePwdBtn').onclick = async ()=>{
     const cur = document.getElementById('curPwd').value;
     const np = document.getElementById('newPwd').value;
