@@ -166,6 +166,51 @@ Resources:`;for(let t of c){if(!t||typeof t!=`string`)throw Error(`@supabase/aut
   .ov-name{font-size:13px;font-weight:500;flex:1;}
   .ov-name small{display:block;font-weight:400;color:var(--ink-soft);font-size:11px;}
   .banner{background:#FDF0E8;border:1px solid #EBC8A6;border-radius:10px;padding:10px 14px;font-size:12.5px;color:#7A4A26;margin-bottom:16px;}
+  /* ---- 曲库 ---- */
+  .song-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px;}
+  .song-stat{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;text-align:center;}
+  .song-stat-num{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:22px;color:var(--leaf);}
+  .song-stat-label{font-size:11.5px;color:var(--ink-soft);margin-top:2px;}
+  .song-row{display:flex;align-items:center;gap:12px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:8px;}
+  .song-dot{width:10px;height:10px;border-radius:50%;flex:0 0 auto;}
+  .song-dot-stage{background:var(--leaf);}
+  .song-dot-rehearsed{background:#7FA88F;}
+  .song-dot-upcoming{background:var(--amber);}
+  .song-dot-shelved{background:var(--line);}
+  .song-main{flex:1;min-width:0;}
+  .song-title{font-weight:700;font-size:15px;}
+  .song-meta{font-size:12px;color:var(--ink-soft);margin-top:2px;}
+  .song-status-select{border:1px solid var(--line);border-radius:8px;padding:5px 8px;font-size:12px;font-family:inherit;background:#fff;color:var(--ink);flex:0 0 auto;}
+  .song-del{background:none;border:none;color:var(--ink-soft);font-size:11.5px;cursor:pointer;text-decoration:underline;padding:0;flex:0 0 auto;}
+
+  /* ---- 对外公开展示页 ---- */
+  .pub-hero{text-align:center;padding:48px 0 32px;}
+  .pub-eyebrow{font-family:'Space Grotesk',sans-serif;font-size:11.5px;letter-spacing:.22em;color:var(--leaf);font-weight:700;margin-bottom:12px;}
+  .pub-title{font-family:'Noto Serif SC',serif;font-weight:900;font-size:clamp(34px,7vw,54px);margin:0 0 14px;line-height:1.15;}
+  .pub-tagline{color:var(--ink-soft);font-size:15px;line-height:1.8;margin:0 auto;max-width:34em;}
+  .pub-banner{width:100%;max-height:320px;object-fit:cover;border-radius:18px;margin-top:28px;display:block;}
+  .pub-section{margin:44px 0;}
+  .pub-h2{font-family:'Noto Serif SC',serif;font-size:22px;margin:0 0 18px;text-align:center;}
+  .pub-members{display:grid;grid-template-columns:repeat(6,1fr);gap:12px;}
+  @media (max-width:640px){ .pub-members{grid-template-columns:repeat(3,1fr);} .song-stats{grid-template-columns:repeat(2,1fr);} }
+  .pub-member{text-align:center;}
+  .pub-member-avatar{width:70px;height:70px;border-radius:50%;margin:0 auto 8px;background:var(--card);border:1px solid var(--line);overflow:hidden;display:flex;align-items:center;justify-content:center;}
+  .pub-member-avatar img{width:100%;height:100%;object-fit:contain;}
+  .pub-member-name{font-weight:700;font-size:13.5px;}
+  .pub-member-role{font-size:11.5px;color:var(--ink-soft);}
+  .pub-gig{display:flex;align-items:center;gap:16px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:14px 18px;margin-bottom:10px;}
+  .pub-gig-date{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:18px;color:var(--leaf);flex:0 0 auto;text-align:center;line-height:1.2;}
+  .pub-gig-date span{font-size:11px;color:var(--ink-soft);font-weight:400;}
+  .pub-gig-title{font-weight:700;font-size:15.5px;}
+  .pub-gig-venue{font-size:12.5px;color:var(--ink-soft);margin-top:3px;}
+  .pub-songs{display:grid;grid-template-columns:repeat(auto-fill,minmax(180px,1fr));gap:10px;}
+  .pub-song{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;}
+  .pub-song b{display:block;font-size:14.5px;}
+  .pub-song span{font-size:12px;color:var(--ink-soft);}
+  .pub-song-more{text-align:center;font-size:12.5px;color:var(--ink-soft);margin-top:14px;}
+  .pub-contact{text-align:center;}
+  .pub-enter{text-align:center;margin:48px 0 20px;padding-top:32px;border-top:1px solid var(--line);}
+
   /* ---- 夸夸墙入口卡片（放在回忆动态顶部，做得显眼一点） ---- */
   .praise-entry{display:flex;align-items:center;gap:14px;background:linear-gradient(135deg,#FDF6E8,#F3F8EE);border:1px solid #E8D9A8;border-radius:16px;padding:16px 18px;margin-bottom:18px;cursor:pointer;transition:.15s;}
   .praise-entry:hover{transform:translateY(-2px);box-shadow:0 6px 18px rgba(120,100,40,.12);}
@@ -499,6 +544,23 @@ const CHARACTER_AVATARS = {
 };
 
 
+/* 曲库的初始歌单（按你给的那张歌单录入，"绿"统一写成苏打绿） */
+const SONG_STATUS = { stage:'可上台', rehearsed:'已排练', upcoming:'即将排练', shelved:'暂时搁置' };
+const DEFAULT_SONGS = [
+  { id:'sg_1', title:'蝉想',           artist:'苏打绿',   status:'rehearsed', note:'', ts:1 },
+  { id:'sg_2', title:'小情歌',         artist:'苏打绿',   status:'rehearsed', note:'', ts:2 },
+  { id:'sg_3', title:'他夏了夏天',     artist:'苏打绿',   status:'rehearsed', note:'', ts:3 },
+  { id:'sg_4', title:'Unintended',     artist:'Muse',     status:'upcoming',  note:'', ts:4 },
+  { id:'sg_5', title:'心酸',           artist:'林宥嘉',   status:'upcoming',  note:'', ts:5 },
+  { id:'sg_6', title:'被雨困住的城市', artist:'苏打绿',   status:'upcoming',  note:'', ts:6 },
+  { id:'sg_7', title:'飞鱼',           artist:'苏打绿',   status:'upcoming',  note:'', ts:7 },
+  { id:'sg_8', title:'无眠',           artist:'苏打绿',   status:'upcoming',  note:'闽南语', ts:8 },
+  { id:'sg_9', title:'我好想你',       artist:'苏打绿',   status:'upcoming',  note:'', ts:9 },
+  { id:'sg_10',title:'频率',           artist:'苏打绿',   status:'upcoming',  note:'', ts:10 },
+  { id:'sg_11',title:'Yellow',         artist:'Coldplay', status:'upcoming',  note:'', ts:11 },
+  { id:'sg_12',title:'Sorry 青春',     artist:'鱼丁糸',   status:'upcoming',  note:'', ts:12 }
+];
+
 let state = {
   members: null,
   checkins: {},
@@ -524,6 +586,8 @@ let state = {
   praises: [],            // 夸夸墙：[{id, toId, fromId, text, ts, likes:[]}]
   ledger: [],             // 乐队小账本：[{id, type:'income'|'expense', amount, note, date, category, byId, ts}]
   gigs: [],               // 演出通告：[{id,title,date,time,venue,fee,contact,status,note,attendance:{},ts}]
+  songs: null,            // 曲库：[{id,title,artist,status,note,ts}]，null 表示还没初始化过
+  showPublic: true,       // 没登录时先看对外展示页，点"进入内部小站"才去登录
   funGame: null,          // 娱乐吧当前打开的小游戏：null | 'undercover' | 'shooter'
   undercoverGame: null,   // 谁是卧底：共享的当前对局数据（见 getUndercoverGame）
   shooterGame: null,      // 实时对战：共享的当前对局数据（见 getShooterGame）
@@ -765,6 +829,7 @@ function applyRemoteData(data){
   state.praises = data.praises || [];
   state.ledger = data.ledger || [];
   state.gigs = data.gigs || [];
+  state.songs = data.songs || DEFAULT_SONGS;
 }
 
 function startRealtimeSync(){
@@ -813,7 +878,7 @@ async function loadAll(){
     return;
   }
   if(!data){
-    data = { members: PRESET_MEMBERS, checkins: {}, meetings: [], posts: [], profiles: {}, guests: [], credentials: {}, messages: [], boards: {}, bandBanner: null, notifications: [], announcement: '', nameProposals: [], freezeTokens: {}, frozenDays: {}, freezeAwardMark: {}, teambuilds: [], dayMemories: {}, undercoverGame: null, shooterGame: null, praises: [], ledger: [], gigs: [] };
+    data = { members: PRESET_MEMBERS, checkins: {}, meetings: [], posts: [], profiles: {}, guests: [], credentials: {}, messages: [], boards: {}, bandBanner: null, notifications: [], announcement: '', nameProposals: [], freezeTokens: {}, frozenDays: {}, freezeAwardMark: {}, teambuilds: [], dayMemories: {}, undercoverGame: null, shooterGame: null, praises: [], ledger: [], gigs: [], songs: DEFAULT_SONGS };
     try{ await remoteSet(data); }
     catch(e2){
       renderErrorScreen('初始化云端数据失败：' + e2.message);
@@ -843,6 +908,7 @@ async function loadAll(){
   state.praises = data.praises || [];
   state.ledger = data.ledger || [];
   state.gigs = data.gigs || [];
+  state.songs = data.songs || DEFAULT_SONGS;
   state.identity = loadIdentity();
   startRealtimeSync();
   renderRoot();
@@ -875,6 +941,7 @@ async function pullLatest(){
       state.praises = data.praises || [];
       state.ledger = data.ledger || [];
       state.gigs = data.gigs || [];
+      state.songs = data.songs || DEFAULT_SONGS;
     }
   }catch(e){ /* 拉取失败就先用本地已有数据 */ }
 }
@@ -913,7 +980,8 @@ async function saveAll(){
       shooterGame: state.shooterGame,
       praises: state.praises,
       ledger: state.ledger,
-      gigs: state.gigs
+      gigs: state.gigs,
+      songs: state.songs
     }), 15000, '保存');
   }catch(e){
     console.error('保存失败', e);
@@ -951,8 +1019,74 @@ function renderErrorScreen(msg){
 }
 
 function renderRoot(){
-  if(state.identity === null || state.identity === undefined){ renderIdentityScreen(); }
+  if(state.identity === null || state.identity === undefined){
+    if(state.showPublic){ renderPublicPage(); }
+    else{ renderIdentityScreen(); }
+  }
   else{ render(); }
+}
+
+/* ---------------- 对外公开展示页：不用登录就能看，发给主办方/路人的门面 ---------------- */
+function renderPublicPage(){
+  const app = document.getElementById('app');
+  const songs = state.songs || [];
+  const playable = songs.filter(s=>s.status==='stage' || s.status==='rehearsed');
+  const upcomingGigs = (state.gigs||[])
+    .filter(g=>g.status==='confirmed' && g.date >= dateKey(TODAY.getFullYear(),TODAY.getMonth(),TODAY.getDate()))
+    .sort((a,b)=>(a.date||'').localeCompare(b.date||''));
+
+  app.innerHTML = `
+    <div class="pub-hero">
+      <div class="pub-eyebrow">INDIE BAND · 湖北工业大学</div>
+      <h1 class="pub-title">皮菇文化有限公司</h1>
+      <p class="pub-tagline">六个人，六种声音，一个夏天。<br>我们唱苏打绿，也唱自己想唱的歌。</p>
+      ${state.bandBanner? `<img class="pub-banner" src="${state.bandBanner}">` : ''}
+    </div>
+
+    <div class="pub-section">
+      <h2 class="pub-h2">成员</h2>
+      <div class="pub-members">
+        ${(state.members||[]).map((m,i)=>`
+          <div class="pub-member">
+            <div class="pub-member-avatar">${CHARACTER_AVATARS[i]? `<img src="${CHARACTER_AVATARS[i]}">` : (m.name[0]||'')}</div>
+            <div class="pub-member-name">${escapeHtml(m.name)}</div>
+            <div class="pub-member-role">${escapeHtml(m.instrument||'')}</div>
+          </div>`).join('')}
+      </div>
+    </div>
+
+    ${upcomingGigs.length? `
+    <div class="pub-section">
+      <h2 class="pub-h2">近期演出</h2>
+      ${upcomingGigs.map(g=>`
+        <div class="pub-gig">
+          <div class="pub-gig-date">${g.date.slice(5)}${g.time? '<br><span>'+g.time+'</span>':''}</div>
+          <div class="pub-gig-main">
+            <div class="pub-gig-title">${escapeHtml(g.title)}</div>
+            ${g.venue? `<div class="pub-gig-venue">📍 ${escapeHtml(g.venue)}</div>`:''}
+          </div>
+        </div>`).join('')}
+    </div>` : ''}
+
+    ${playable.length? `
+    <div class="pub-section">
+      <h2 class="pub-h2">曲目</h2>
+      <div class="pub-songs">
+        ${playable.map(s=>`<div class="pub-song"><b>${escapeHtml(s.title)}</b><span>${escapeHtml(s.artist||'')}</span></div>`).join('')}
+      </div>
+      <p class="pub-song-more">还有 ${songs.length-playable.length} 首正在排练中</p>
+    </div>` : ''}
+
+    <div class="pub-section pub-contact">
+      <h2 class="pub-h2">找我们演出</h2>
+      <p class="pub-tagline" style="font-size:14px;">演出邀约、合作洽谈，欢迎联系我们。</p>
+    </div>
+
+    <div class="pub-enter">
+      <button class="btn btn-primary" id="enterInner" style="flex:none;padding:12px 32px;">进入内部小站 →</button>
+    </div>
+  `;
+  document.getElementById('enterInner').onclick = ()=>{ state.showPublic = false; renderRoot(); };
 }
 
 /* ---------------- IDENTITY SCREEN（音乐家 / 游客 两级登录 + 密码）---------------- */
@@ -962,6 +1096,7 @@ function renderRoleChoice(){
   const app = document.getElementById('app');
   app.innerHTML = `
     <div class="setup-card">
+      <button class="back-link" id="backToPublic">← 返回主页</button>
       <div class="eyebrow">皮菇文化有限公司 · 团队小站</div>
       <h1 style="font-family:'Noto Serif SC',serif;font-weight:900;margin:0 0 10px;">请问你是谁？</h1>
       <p class="sub">乐队六位成员请选"音乐家"；如果你是被邀请来玩的朋友，选"游客"。</p>
@@ -970,6 +1105,7 @@ function renderRoleChoice(){
         <button class="role-btn" data-role="visitor"><div class="role-icon">🙋</div><div class="role-label">游客</div><div class="role-sub">朋友 · 观众</div></button>
       </div>
     </div>`;
+  document.getElementById('backToPublic').onclick = ()=>{ state.showPublic = true; renderRoot(); };
   app.querySelectorAll('.role-btn').forEach(b=>{
     b.onclick = ()=>{ b.dataset.role==='musician' ? renderMusicianGrid() : renderVisitorChoice(); };
   });
@@ -2301,7 +2437,7 @@ function renderScheduleTab(target){
 
 function renderScheduleSubNav(){
   const nav = document.getElementById('scheduleSubNav');
-  const subs = [ ['checkin','日历'], ['meeting','行程'], ['gig','🎤 演出通告'], ['ledger','💰 小账本'] ];
+  const subs = [ ['checkin','日历'], ['meeting','行程'], ['song','🎵 曲库'], ['gig','🎤 演出通告'], ['ledger','💰 小账本'] ];
   nav.innerHTML = subs.map(([k,l])=>`<button class="tab-btn sub-tab ${state.scheduleSub===k?'active':''}" data-sub="${k}">${l}</button>`).join('');
   nav.querySelectorAll('.sub-tab').forEach(b=>{
     b.onclick = ()=>{ state.scheduleSub = b.dataset.sub; renderScheduleSubNav(); renderScheduleSubBody(); };
@@ -2312,6 +2448,7 @@ function renderScheduleSubBody(){
   const body = document.getElementById('scheduleSubBody');
   if(state.scheduleSub==='ledger'){ renderLedger(body); return; }
   if(state.scheduleSub==='gig'){ renderGigBoard(body); return; }
+  if(state.scheduleSub==='song'){ renderSongLibrary(body); return; }
   if(state.scheduleSub==='meeting'){
     body.innerHTML = `
       <div class="tabs" id="tripSubNav"></div>
@@ -3154,6 +3291,92 @@ function renderPraiseWall(body){
       state.praises = state.praises.filter(x=>x.id!==b.dataset.id);
       await queueSave();
       renderPraiseWall(body);
+    };
+  });
+}
+
+/* ---------------- 曲库：我们会哪些歌、练到什么程度 ---------------- */
+function renderSongLibrary(body){
+  const canEdit = !isGuestIdentity(state.identity); // 六位音乐家都能维护，游客只能看
+  const songs = state.songs || [];
+  const order = ['stage','rehearsed','upcoming','shelved'];
+  const grouped = {};
+  order.forEach(k=> grouped[k] = songs.filter(s=>s.status===k));
+
+  body.innerHTML = `
+    <div class="song-stats">
+      ${order.map(k=>`<div class="song-stat">
+        <div class="song-stat-num">${grouped[k].length}</div>
+        <div class="song-stat-label">${SONG_STATUS[k]}</div>
+      </div>`).join('')}
+    </div>
+    ${canEdit? `
+      <div class="composer">
+        <div class="ledger-form">
+          <div class="cfg-field"><label>歌名</label><input type="text" id="sgTitle" placeholder="比如：小情歌"></div>
+          <div class="cfg-field"><label>原唱</label><input type="text" id="sgArtist" placeholder="比如：苏打绿"></div>
+          <div class="cfg-field"><label>状态</label>
+            <select id="sgStatus">${order.map(k=>`<option value="${k}" ${k==='upcoming'?'selected':''}>${SONG_STATUS[k]}</option>`).join('')}</select>
+          </div>
+          <div class="cfg-field"><label>备注</label><input type="text" id="sgNote" placeholder="比如：闽南语 / 降调"></div>
+        </div>
+        <div class="composer-row" style="justify-content:flex-end;">
+          <button class="btn btn-primary" id="sgAdd" style="width:auto;padding:8px 20px;">加入曲库</button>
+        </div>
+      </div>
+    ` : `<div class="banner">🎵 这是乐队目前在练和会唱的歌，游客可以查看。</div>`}
+    <div id="songList"></div>
+  `;
+
+  if(canEdit){
+    document.getElementById('sgAdd').onclick = async ()=>{
+      const title = document.getElementById('sgTitle').value.trim();
+      if(!title){ alert('至少填个歌名'); return; }
+      state.songs = state.songs || [];
+      state.songs.push({
+        id:'sg_'+Date.now(), title,
+        artist: document.getElementById('sgArtist').value.trim(),
+        status: document.getElementById('sgStatus').value,
+        note: document.getElementById('sgNote').value.trim(),
+        ts: Date.now()
+      });
+      await queueSave();
+      renderSongLibrary(body);
+    };
+  }
+
+  const list = document.getElementById('songList');
+  list.innerHTML = order.filter(k=>grouped[k].length).map(k=>`
+    <div class="section-head"><h2>${SONG_STATUS[k]}</h2></div>
+    ${grouped[k].map(s=>`
+      <div class="song-row">
+        <div class="song-dot song-dot-${s.status}"></div>
+        <div class="song-main">
+          <div class="song-title">${escapeHtml(s.title)}</div>
+          <div class="song-meta">${escapeHtml(s.artist||'—')}${s.note? ' · '+escapeHtml(s.note):''}</div>
+        </div>
+        ${canEdit? `
+          <select class="song-status-select" data-id="${s.id}">
+            ${order.map(o=>`<option value="${o}" ${s.status===o?'selected':''}>${SONG_STATUS[o]}</option>`).join('')}
+          </select>
+          <button type="button" class="song-del" data-id="${s.id}">删除</button>
+        `:''}
+      </div>
+    `).join('')}
+  `).join('') || '<div class="empty-hint">曲库还是空的</div>';
+
+  list.querySelectorAll('.song-status-select').forEach(sel=>{
+    sel.onchange = async ()=>{
+      const s = state.songs.find(x=>x.id===sel.dataset.id);
+      if(s){ s.status = sel.value; await queueSave(); renderSongLibrary(body); }
+    };
+  });
+  list.querySelectorAll('.song-del').forEach(b=>{
+    b.onclick = async ()=>{
+      if(!confirm('把这首歌从曲库里删掉吗？')) return;
+      state.songs = state.songs.filter(x=>x.id!==b.dataset.id);
+      await queueSave();
+      renderSongLibrary(body);
     };
   });
 }
