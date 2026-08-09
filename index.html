@@ -183,6 +183,19 @@ Resources:`;for(let t of c){if(!t||typeof t!=`string`)throw Error(`@supabase/aut
   .role-assign-select{border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-size:13.5px;font-family:inherit;background:#fff;color:var(--ink);flex:0 0 auto;min-width:110px;}
   .maintenance-log{margin-top:12px;font-size:12.5px;color:var(--ink-soft);line-height:1.7;}
 
+  /* ---- 器材清单 ---- */
+  .gear-row{display:flex;align-items:center;gap:12px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:8px;}
+  .gear-dot{width:10px;height:10px;border-radius:50%;flex:0 0 auto;}
+  .gear-ok{background:var(--leaf);}
+  .gear-worn{background:var(--amber);}
+  .gear-broken{background:var(--danger);}
+  .gear-missing{background:#9B7BA6;}
+  .gear-main{flex:1;min-width:0;}
+  .gear-name{font-weight:700;font-size:15px;}
+  .gear-meta{font-size:12px;color:var(--ink-soft);margin-top:2px;}
+  .gear-status-select{border:1px solid var(--line);border-radius:8px;padding:5px 8px;font-size:12px;font-family:inherit;background:#fff;color:var(--ink);flex:0 0 auto;}
+  .gear-del{background:none;border:none;color:var(--ink-soft);font-size:11.5px;cursor:pointer;text-decoration:underline;padding:0;flex:0 0 auto;}
+
   /* ---- 曲库 ---- */
   .song-stats{display:grid;grid-template-columns:repeat(4,1fr);gap:10px;margin-bottom:18px;}
   .song-stat{background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px;text-align:center;}
@@ -615,6 +628,7 @@ let state = {
   songs: null,            // 曲库：[{id,title,artist,status,note,ts}]，null 表示还没初始化过
   showPublic: true,       // 没登录时先看对外展示页，点"进入内部小站"才去登录
   roles: null,            // 各模块负责人（管理员可改），null 表示用默认分工
+  gear: [],               // 器材清单：[{id,name,category,status,owner,note,ts}]
   funGame: null,          // 娱乐吧当前打开的小游戏：null | 'undercover' | 'shooter'
   undercoverGame: null,   // 谁是卧底：共享的当前对局数据（见 getUndercoverGame）
   shooterGame: null,      // 实时对战：共享的当前对局数据（见 getShooterGame）
@@ -630,10 +644,19 @@ const DEFAULT_PASSWORD = 'pgdpg402';
 
 /* 各模块的负责人：默认按当初的分工，之后管理员可以在界面上随时重新分配。
    存进共享数据里，所有人看到的分工是一致的。 */
-const DEFAULT_ROLES = { ledger:0, meeting:1, gig:2, teambuild:3, song:4 };
+const DEFAULT_ROLES = {
+  ledger:0, meeting:1, gig:2, teambuild:3, song:4,
+  promo:1,    // 宣传/对外形象 → 小鱼
+  media:1,    // 影像记录 → 小鱼
+  gear:4,     // 器材管理 → 柜子羊
+  music:5,    // 音乐总监/编曲 → 严格上帝
+  host:0      // 主持/串场 → 坤坤
+};
 const ROLE_LABELS = {
   ledger:'💰 小账本', meeting:'🎸 排练安排', gig:'🎤 演出通告',
-  teambuild:'🍻 团建安排', song:'🎵 曲库'
+  teambuild:'🍻 团建安排', song:'🎵 曲库',
+  promo:'📣 宣传 · 对外形象', media:'📷 影像记录', gear:'🎚 器材管理',
+  music:'🎼 音乐总监 · 编曲', host:'🎙 主持 · 串场'
 };
 function getRoles(){ return Object.assign({}, DEFAULT_ROLES, state.roles||{}); }
 function roleHolder(key){ return getRoles()[key]; }
@@ -645,6 +668,8 @@ function canManageTeambuild(){ return hasRole('teambuild'); }
 function canManageLedger(){ return hasRole('ledger'); }
 function canManageGigs(){ return hasRole('gig'); }
 function canManageSongs(){ return hasRole('song'); }
+function canManagePromo(){ return hasRole('promo'); }   // 公开展示页 + 首页封面图
+function canManageGear(){ return hasRole('gear'); }     // 器材清单
 
 /* ---------------- 身份 / 游客 通用工具 ---------------- */
 function isGuestIdentity(id){ return typeof id==='string' && id.indexOf('guest:')===0; }
@@ -867,6 +892,7 @@ function applyRemoteData(data){
   state.gigs = data.gigs || [];
   state.songs = data.songs || DEFAULT_SONGS;
   state.roles = data.roles || DEFAULT_ROLES;
+  state.gear = data.gear || [];
 }
 
 function startRealtimeSync(){
@@ -915,7 +941,7 @@ async function loadAll(){
     return;
   }
   if(!data){
-    data = { members: PRESET_MEMBERS, checkins: {}, meetings: [], posts: [], profiles: {}, guests: [], credentials: {}, messages: [], boards: {}, bandBanner: null, notifications: [], announcement: '', nameProposals: [], freezeTokens: {}, frozenDays: {}, freezeAwardMark: {}, teambuilds: [], dayMemories: {}, undercoverGame: null, shooterGame: null, praises: [], ledger: [], gigs: [], songs: DEFAULT_SONGS, roles: DEFAULT_ROLES };
+    data = { members: PRESET_MEMBERS, checkins: {}, meetings: [], posts: [], profiles: {}, guests: [], credentials: {}, messages: [], boards: {}, bandBanner: null, notifications: [], announcement: '', nameProposals: [], freezeTokens: {}, frozenDays: {}, freezeAwardMark: {}, teambuilds: [], dayMemories: {}, undercoverGame: null, shooterGame: null, praises: [], ledger: [], gigs: [], songs: DEFAULT_SONGS, roles: DEFAULT_ROLES, gear: [] };
     try{ await remoteSet(data); }
     catch(e2){
       renderErrorScreen('初始化云端数据失败：' + e2.message);
@@ -947,6 +973,7 @@ async function loadAll(){
   state.gigs = data.gigs || [];
   state.songs = data.songs || DEFAULT_SONGS;
   state.roles = data.roles || DEFAULT_ROLES;
+  state.gear = data.gear || [];
   state.identity = loadIdentity();
   startRealtimeSync();
   renderRoot();
@@ -981,6 +1008,7 @@ async function pullLatest(){
       state.gigs = data.gigs || [];
       state.songs = data.songs || DEFAULT_SONGS;
       state.roles = data.roles || DEFAULT_ROLES;
+      state.gear = data.gear || [];
     }
   }catch(e){ /* 拉取失败就先用本地已有数据 */ }
 }
@@ -1021,7 +1049,8 @@ async function saveAll(){
       ledger: state.ledger,
       gigs: state.gigs,
       songs: state.songs,
-      roles: state.roles
+      roles: state.roles,
+      gear: state.gear
     }), 15000, '保存');
   }catch(e){
     console.error('保存失败', e);
@@ -1467,8 +1496,8 @@ function renderHome(target){
   target.innerHTML = `
     <div class="band-banner" id="bandBanner">
       ${state.bandBanner ? `<img src="${state.bandBanner}">` : `<div class="banner-empty">还没有乐队形象图，点右下角传一张吧 🎸</div>`}
-      <button class="banner-edit-btn" id="bannerEditBtn" type="button">更换封面图</button>
-      <input type="file" accept="image/*" id="bannerInput" style="display:none;">
+      ${canManagePromo()? `<button class="banner-edit-btn" id="bannerEditBtn" type="button">更换封面图</button>
+      <input type="file" accept="image/*" id="bannerInput" style="display:none;">`:''}
     </div>
     ${renderDashboard()}
     <div class="home-entries">
@@ -1493,6 +1522,7 @@ function renderHome(target){
       renderMainBody();
     };
   });
+  if(canManagePromo()){
   document.getElementById('bannerEditBtn').onclick = ()=> document.getElementById('bannerInput').click();
   document.getElementById('bannerInput').addEventListener('change', async (ev)=>{
     const file = ev.target.files[0];
@@ -1504,6 +1534,7 @@ function renderHome(target){
       renderHome(target);
     }catch(err){ alert('图片处理失败：' + err.message); }
   });
+  }
   if(canEditAnnounce){
     document.getElementById('editAnnounceBtn').onclick = ()=> openAnnounceEditor(target);
   }
@@ -2554,7 +2585,7 @@ function renderScheduleTab(target){
 
 function renderScheduleSubNav(){
   const nav = document.getElementById('scheduleSubNav');
-  const subs = [ ['checkin','日历'], ['meeting','行程'], ['song','🎵 曲库'], ['gig','🎤 演出通告'], ['ledger','💰 小账本'] ];
+  const subs = [ ['checkin','日历'], ['meeting','行程'], ['song','🎵 曲库'], ['gig','🎤 演出通告'], ['gear','🎚 器材'], ['ledger','💰 小账本'] ];
   nav.innerHTML = subs.map(([k,l])=>`<button class="tab-btn sub-tab ${state.scheduleSub===k?'active':''}" data-sub="${k}">${l}</button>`).join('');
   nav.querySelectorAll('.sub-tab').forEach(b=>{
     b.onclick = ()=>{ state.scheduleSub = b.dataset.sub; renderScheduleSubNav(); renderScheduleSubBody(); };
@@ -2566,6 +2597,7 @@ function renderScheduleSubBody(){
   if(state.scheduleSub==='ledger'){ renderLedger(body); return; }
   if(state.scheduleSub==='gig'){ renderGigBoard(body); return; }
   if(state.scheduleSub==='song'){ renderSongLibrary(body); return; }
+  if(state.scheduleSub==='gear'){ renderGearList(body); return; }
   if(state.scheduleSub==='meeting'){
     body.innerHTML = `
       <div class="tabs" id="tripSubNav"></div>
@@ -3509,6 +3541,97 @@ async function migrateOldPhotos(){
   }catch(e){
     maintLog('❌ 迁移中断：' + e.message + '（已搬走的部分不会丢，可以再点一次继续）');
   }
+}
+
+/* ---------------- 器材清单：柜子羊管，演出前照着过一遍就不会漏东西 ---------------- */
+const GEAR_STATUS = { ok:'正常', worn:'该换了', broken:'坏了', missing:'找不到' };
+const GEAR_CATEGORIES = ['吉他/贝斯','鼓','键盘','线材','音箱/效果器','话筒','耗材','其他'];
+
+function renderGearList(body){
+  const canEdit = canManageGear();
+  const list = state.gear || [];
+  const needAttention = list.filter(g=>g.status!=='ok');
+
+  body.innerHTML = `
+    ${needAttention.length? `<div class="banner">⚠️ 有 ${needAttention.length} 件器材需要处理：${needAttention.map(g=>escapeHtml(g.name)).join('、')}</div>` : ''}
+    ${canEdit? `
+      <div class="composer">
+        <div class="ledger-form">
+          <div class="cfg-field"><label>器材名称</label><input type="text" id="grName" placeholder="比如：贝斯弦 / 鼓皮 / 音频线"></div>
+          <div class="cfg-field"><label>分类</label>
+            <select id="grCategory">${GEAR_CATEGORIES.map(x=>`<option value="${x}">${x}</option>`).join('')}</select>
+          </div>
+          <div class="cfg-field"><label>状态</label>
+            <select id="grStatus">${Object.entries(GEAR_STATUS).map(([k,v])=>`<option value="${k}">${v}</option>`).join('')}</select>
+          </div>
+          <div class="cfg-field"><label>保管人</label>
+            <select id="grOwner"><option value="">未指定</option>${(state.members||[]).map((m,i)=>`<option value="${i}">${escapeHtml(m.name)}</option>`).join('')}</select>
+          </div>
+        </div>
+        <div class="cfg-field" style="margin-top:10px;"><label>备注</label><input type="text" id="grNote" placeholder="比如：上次换弦是6月 / 演出必带"></div>
+        <div class="composer-row" style="justify-content:flex-end;">
+          <button class="btn btn-primary" id="grAdd" style="width:auto;padding:8px 20px;">加入清单</button>
+        </div>
+      </div>
+    ` : `<div class="banner">🎚 器材清单由柜子羊维护，演出前可以照着这份清单检查一遍。</div>`}
+    <div id="gearList"></div>
+  `;
+
+  if(canEdit){
+    document.getElementById('grAdd').onclick = async ()=>{
+      const name = document.getElementById('grName').value.trim();
+      if(!name){ alert('填个器材名称'); return; }
+      const ownerVal = document.getElementById('grOwner').value;
+      state.gear = state.gear || [];
+      state.gear.push({
+        id:'gr_'+Date.now(), name,
+        category: document.getElementById('grCategory').value,
+        status: document.getElementById('grStatus').value,
+        owner: ownerVal===''? null : Number(ownerVal),
+        note: document.getElementById('grNote').value.trim(),
+        ts: Date.now()
+      });
+      await queueSave();
+      renderGearList(body);
+    };
+  }
+
+  const gl = document.getElementById('gearList');
+  if(list.length===0){ gl.innerHTML = `<div class="empty-hint">清单还是空的</div>`; return; }
+  const byCat = {};
+  list.forEach(g=>{ (byCat[g.category] = byCat[g.category] || []).push(g); });
+  gl.innerHTML = Object.entries(byCat).map(([cat, items])=>`
+    <div class="section-head"><h2>${escapeHtml(cat)}</h2></div>
+    ${items.map(g=>`
+      <div class="gear-row">
+        <div class="gear-dot gear-${g.status}"></div>
+        <div class="gear-main">
+          <div class="gear-name">${escapeHtml(g.name)}</div>
+          <div class="gear-meta">${GEAR_STATUS[g.status]}${g.owner!==null&&g.owner!==undefined&&state.members[g.owner]? ' · 保管：'+escapeHtml(state.members[g.owner].name):''}${g.note? ' · '+escapeHtml(g.note):''}</div>
+        </div>
+        ${canEdit? `
+          <select class="gear-status-select" data-id="${g.id}">
+            ${Object.entries(GEAR_STATUS).map(([k,v])=>`<option value="${k}" ${g.status===k?'selected':''}>${v}</option>`).join('')}
+          </select>
+          <button type="button" class="gear-del" data-id="${g.id}">删除</button>
+        `:''}
+      </div>`).join('')}
+  `).join('');
+
+  gl.querySelectorAll('.gear-status-select').forEach(sel=>{
+    sel.onchange = async ()=>{
+      const g = state.gear.find(x=>x.id===sel.dataset.id);
+      if(g){ g.status = sel.value; await queueSave(); renderGearList(body); }
+    };
+  });
+  gl.querySelectorAll('.gear-del').forEach(b=>{
+    b.onclick = async ()=>{
+      if(!confirm('从清单里删掉这件器材吗？')) return;
+      state.gear = state.gear.filter(x=>x.id!==b.dataset.id);
+      await queueSave();
+      renderGearList(body);
+    };
+  });
 }
 
 /* ---------------- 曲库：我们会哪些歌、练到什么程度 ---------------- */
