@@ -524,6 +524,15 @@ const MONTHS = [
 ];
 function isCheckinMonth(m){ return m===6 || m===7; } // 只有七月、八月保留打卡功能
 
+/* 打开日历时自动停在"今天"所在的月份；如果今天不在 4~12 月这个范围内，就回退到七月 */
+function defaultMonthIndex(){
+  const now = new Date();
+  const idx = MONTHS.findIndex(mo => mo.y===now.getFullYear() && mo.m===now.getMonth());
+  if(idx >= 0) return idx;
+  const july = MONTHS.findIndex(mo => mo.m===6);
+  return july >= 0 ? july : 0;
+}
+
 const PRESET_MEMBERS = [
   {name:'坤坤', instrument:'主唱'},
   {name:'小鱼', instrument:'贝斯'},
@@ -591,7 +600,7 @@ let state = {
   funGame: null,          // 娱乐吧当前打开的小游戏：null | 'undercover' | 'shooter'
   undercoverGame: null,   // 谁是卧底：共享的当前对局数据（见 getUndercoverGame）
   shooterGame: null,      // 实时对战：共享的当前对局数据（见 getShooterGame）
-  activeMonth: 3, // 默认停在七月（MONTHS里四月是0，七月是3）
+  activeMonth: defaultMonthIndex(), // 自动定位到当前月份，超出范围时回退到七月
   activeTab: null,        // null = 首页, 'schedule' | 'memories' | 'profile'
   scheduleSub: 'checkin', // 'checkin' | 'meeting'
   viewingFriend: null,    // 个人页里正在查看的好友 id（数字=音乐家下标，'guest:名字'=游客）
@@ -609,6 +618,8 @@ const LEDGER_INDEX = 0;     // 坤坤 的初始下标，只有他能记账/改�
 function canManageLedger(){ return state.identity === LEDGER_INDEX; }
 const GIG_INDEX = 2;        // 杉菜 的初始下标，只有她能添加/管理演出通告
 function canManageGigs(){ return state.identity === GIG_INDEX; }
+const SONG_INDEX = 4;       // 柜子羊 的初始下标，只有他能添加/管理曲库
+function canManageSongs(){ return state.identity === SONG_INDEX; }
 
 /* ---------------- 身份 / 游客 通用工具 ---------------- */
 function isGuestIdentity(id){ return typeof id==='string' && id.indexOf('guest:')===0; }
@@ -3297,7 +3308,7 @@ function renderPraiseWall(body){
 
 /* ---------------- 曲库：我们会哪些歌、练到什么程度 ---------------- */
 function renderSongLibrary(body){
-  const canEdit = !isGuestIdentity(state.identity); // 六位音乐家都能维护，游客只能看
+  const canEdit = canManageSongs(); // 只有柜子羊能维护曲库，其他人只能看
   const songs = state.songs || [];
   const order = ['stage','rehearsed','upcoming','shelved'];
   const grouped = {};
@@ -3324,7 +3335,7 @@ function renderSongLibrary(body){
           <button class="btn btn-primary" id="sgAdd" style="width:auto;padding:8px 20px;">加入曲库</button>
         </div>
       </div>
-    ` : `<div class="banner">🎵 这是乐队目前在练和会唱的歌，游客可以查看。</div>`}
+    ` : `<div class="banner">🎵 曲库由柜子羊统一维护，大家可以查看每首歌的状态，但不能增删改。</div>`}
     <div id="songList"></div>
   `;
 
