@@ -2585,7 +2585,7 @@ function renderScheduleTab(target){
 
 function renderScheduleSubNav(){
   const nav = document.getElementById('scheduleSubNav');
-  const subs = [ ['checkin','日历'], ['meeting','行程'], ['song','🎵 曲库'], ['gig','🎤 演出通告'], ['gear','🎚 器材'], ['ledger','💰 小账本'] ];
+  const subs = [ ['checkin','日历'], ['meeting','行程'], ['gear','🎚 器材'], ['song','🎵 曲库'], ['gig','🎤 演出通告'], ['ledger','💰 小账本'] ];
   nav.innerHTML = subs.map(([k,l])=>`<button class="tab-btn sub-tab ${state.scheduleSub===k?'active':''}" data-sub="${k}">${l}</button>`).join('');
   nav.querySelectorAll('.sub-tab').forEach(b=>{
     b.onclick = ()=>{ state.scheduleSub = b.dataset.sub; renderScheduleSubNav(); renderScheduleSubBody(); };
@@ -3548,7 +3548,7 @@ const GEAR_STATUS = { ok:'正常', worn:'该换了', broken:'坏了', missing:'�
 const GEAR_CATEGORIES = ['吉他/贝斯','鼓','键盘','线材','音箱/效果器','话筒','耗材','其他'];
 
 function renderGearList(body){
-  const canEdit = canManageGear();
+  const canEdit = !isGuestIdentity(state.identity); // 六位音乐家都能维护器材清单，游客只能看
   const list = state.gear || [];
   const needAttention = list.filter(g=>g.status!=='ok');
 
@@ -3573,7 +3573,7 @@ function renderGearList(body){
           <button class="btn btn-primary" id="grAdd" style="width:auto;padding:8px 20px;">加入清单</button>
         </div>
       </div>
-    ` : `<div class="banner">🎚 器材清单由柜子羊维护，演出前可以照着这份清单检查一遍。</div>`}
+    ` : `<div class="banner">🎚 这是乐队的器材清单，演出前可以照着检查一遍。</div>`}
     <div id="gearList"></div>
   `;
 
