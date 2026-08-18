@@ -183,6 +183,30 @@ Resources:`;for(let t of c){if(!t||typeof t!=`string`)throw Error(`@supabase/aut
   .role-assign-select{border:1px solid var(--line);border-radius:8px;padding:7px 10px;font-size:13.5px;font-family:inherit;background:#fff;color:var(--ink);flex:0 0 auto;min-width:110px;}
   .maintenance-log{margin-top:12px;font-size:12.5px;color:var(--ink-soft);line-height:1.7;}
 
+  /* ---- 首页功能概览：一个总开关，点开看全部功能介绍 ---- */
+  .guide-wrap{margin:6px 0 24px;}
+  .guide-main-toggle{width:100%;display:flex;align-items:center;gap:14px;background:var(--card);border:1px solid var(--line);border-radius:14px;padding:15px 18px;cursor:pointer;font-family:inherit;text-align:left;transition:.15s;}
+  .guide-main-toggle:hover{border-color:var(--leaf);}
+  .guide-main-icon{font-size:24px;flex:0 0 auto;}
+  .guide-main-text{flex:1;min-width:0;}
+  .guide-main-title{display:block;font-family:'Noto Serif SC',serif;font-weight:700;font-size:16px;color:var(--ink);}
+  .guide-main-sub{display:block;font-size:12px;color:var(--ink-soft);margin-top:2px;}
+  .guide-main-arrow{font-size:20px;color:var(--ink-soft);flex:0 0 auto;line-height:1;transition:transform .3s;}
+  .guide-wrap.open .guide-main-arrow{transform:rotate(180deg);}
+  .guide-body{display:grid;grid-template-rows:0fr;transition:grid-template-rows .32s ease;}
+  .guide-wrap.open .guide-body{grid-template-rows:1fr;}
+  .guide-body-inner{overflow:hidden;display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:14px;}
+  .guide-wrap.open .guide-body-inner{padding-top:14px;}
+  .guide-group{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;}
+  .guide-group-title{display:flex;align-items:center;gap:8px;font-family:'Noto Serif SC',serif;font-weight:700;font-size:14.5px;margin-bottom:10px;padding-bottom:10px;border-bottom:1px solid var(--line);}
+  .guide-item{display:flex;gap:11px;align-items:center;padding:10px 8px;border-radius:10px;cursor:pointer;transition:.15s;}
+  .guide-item:hover{background:var(--leaf-light);}
+  .guide-item-icon{font-size:19px;flex:0 0 auto;}
+  .guide-item-body{min-width:0;flex:1;}
+  .guide-item-name{font-weight:700;font-size:13.5px;}
+  .guide-item-desc{font-size:11.5px;color:var(--ink-soft);line-height:1.5;margin-top:2px;}
+  .guide-item-go{font-size:18px;color:var(--ink-soft);flex:0 0 auto;}
+
   /* ---- 器材清单 ---- */
   .gear-row{display:flex;align-items:center;gap:12px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:12px 14px;margin-bottom:8px;}
   .gear-dot{width:10px;height:10px;border-radius:50%;flex:0 0 auto;}
@@ -449,6 +473,19 @@ Resources:`;for(let t of c){if(!t||typeof t!=`string`)throw Error(`@supabase/aut
   .main-tab-locked{cursor:default!important;}
   .main-tab-locked:hover{border-color:var(--line)!important;color:var(--ink-soft)!important;}
   .main-tab-locked.active:hover{color:#fff!important;border-color:var(--leaf)!important;}
+  /* ---- 微信式聊天界面 ---- */
+  .chat-page{background:var(--card);border:1px solid var(--line);border-radius:14px;overflow:hidden;display:flex;flex-direction:column;height:calc(100vh - 230px);min-height:380px;}
+  .chat-header{display:flex;align-items:center;gap:12px;padding:12px 14px;border-bottom:1px solid var(--line);background:var(--card);flex:0 0 auto;}
+  .chat-back{background:none;border:none;font-size:28px;line-height:1;color:var(--leaf);cursor:pointer;padding:0 4px;flex:0 0 auto;}
+  .chat-header-avatar{width:40px;height:40px;border-radius:10px;background:var(--leaf-light);display:flex;align-items:center;justify-content:center;font-weight:700;color:#fff;overflow:hidden;cursor:pointer;flex:0 0 auto;transition:.15s;}
+  .chat-header-avatar:hover{transform:scale(1.05);}
+  .chat-header-avatar img{width:100%;height:100%;object-fit:cover;}
+  .chat-header-info{cursor:pointer;min-width:0;flex:1;}
+  .chat-header-name{font-weight:700;font-size:15.5px;}
+  .chat-header-sub{font-size:11.5px;color:var(--ink-soft);margin-top:1px;}
+  .chat-page .chat-thread{flex:1;max-height:none;overflow-y:auto;padding:16px 14px;background:var(--bg);}
+  .chat-page .chat-input-row{padding:12px 14px;border-top:1px solid var(--line);margin-top:0;flex:0 0 auto;background:var(--card);}
+
   .chat-card{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:16px;margin-top:20px;}
   .chat-thread{max-height:280px;overflow-y:auto;display:flex;flex-direction:column;gap:8px;padding:6px 2px;}
   .chat-bubble-row{display:flex;}
@@ -636,6 +673,7 @@ let state = {
   activeTab: null,        // null = 首页, 'schedule' | 'memories' | 'profile'
   scheduleSub: 'checkin', // 'checkin' | 'meeting'
   viewingFriend: null,    // 个人页里正在查看的好友 id（数字=音乐家下标，'guest:名字'=游客）
+  viewingProfileOf: null, // 在聊天界面里点头像后，正在查看谁的资料
   identity: undefined
 };
 
@@ -1413,7 +1451,7 @@ function renderMainBody(){
     renderHome(target);
   }else{
     target.innerHTML = `<div class="top-bar"><button class="back-link" id="backHome">← 返回首页</button><button class="icon-btn" id="refreshBtn">↻ 刷新最新数据</button></div><div id="tabContent"></div>`;
-    document.getElementById('backHome').onclick = ()=>{ state.activeTab=null; state.viewingFriend=null; renderMainBody(); };
+    document.getElementById('backHome').onclick = ()=>{ state.activeTab=null; state.viewingFriend=null; state.viewingProfileOf=null; renderMainBody(); };
     document.getElementById('refreshBtn').onclick = async ()=>{
       await pullLatest();
       renderActiveTab();
@@ -1491,6 +1529,68 @@ function renderDashboard(){
     </div>`).join('')}</div>`;
 }
 
+/* 首页功能导览：告诉大家这个站里有什么、每块归谁管，点了直接进去 */
+function renderFeatureGuide(){
+  const roles = getRoles();
+  const holder = (k)=>{
+    const m = (state.members||[])[roles[k]];
+    return m? m.name : '未指定';
+  };
+  const groups = [
+    { title:'日程 · 把事情安排明白', tab:'schedule', items:[
+      { icon:'📅', name:'日历', desc:'暑期每天打卡，其他月份存共同回忆照片', sub:'checkin' },
+      { icon:'🎸', name:'行程', desc:`排练由 ${holder('meeting')} 安排，团建由 ${holder('teambuild')} 安排`, sub:'meeting' },
+      { icon:'🎚', name:'器材', desc:'谁保管什么、哪件该换了，演出前照着查一遍', sub:'gear' },
+      { icon:'🎵', name:'曲库', desc:`会哪些歌、练到什么程度，${holder('song')} 维护`, sub:'song' },
+      { icon:'🎤', name:'演出通告', desc:`接到的活都在这，${holder('gig')} 对接，大家报到场情况`, sub:'gig' },
+      { icon:'💰', name:'小账本', desc:`收支和分账，${holder('ledger')} 记`, sub:'ledger' }
+    ]},
+    { title:'回忆 · 把日子留下来', tab:'memories', items:[
+      { icon:'📸', name:'回忆动态', desc:'发照片、发牢骚、分享电影和音乐' },
+      { icon:'🌟', name:'夸夸墙', desc:'给队友写一句具体的夸奖' },
+      { icon:'🎏', name:'征集团体名字', desc:'提名字、说理由，大家投票' }
+    ]},
+    { title:'娱乐吧 · 团建的时候一起玩', tab:'fun', items:[
+      { icon:'🕵️', name:'谁是卧底', desc:'找出混进来的卧底' },
+      { icon:'🔫', name:'枪战对决', desc:'横屏实时对战，六个人有各自的角色和技能' }
+    ]},
+    { title:'个人 · 你自己的地盘', tab:'profile', items:[
+      { icon:'🧑', name:'我的资料', desc:'头像、昵称、生日、MBTI、专属主题色' },
+      { icon:'🖼', name:'展示墙', desc:'贴照片、贴纸、写字、涂鸦，别人能来看' },
+      { icon:'💬', name:'好友与私信', desc:'跟任何人一对一聊天' }
+    ]}
+  ];
+  const icons = { schedule:'📅', memories:'📸', fun:'🎮', profile:'🧑' };
+  return `
+    <div class="guide-wrap" id="guideWrap">
+      <button type="button" class="guide-main-toggle" id="guideMainToggle">
+        <span class="guide-main-icon">📖</span>
+        <span class="guide-main-text">
+          <span class="guide-main-title">功能概览</span>
+          <span class="guide-main-sub">看看这个站里都有什么</span>
+        </span>
+        <span class="guide-main-arrow">⌄</span>
+      </button>
+      <div class="guide-body">
+        <div class="guide-body-inner">
+          ${groups.map(g=>`
+            <div class="guide-group">
+              <div class="guide-group-title"><span>${icons[g.tab]||'✨'}</span>${escapeHtml(g.title)}</div>
+              ${g.items.map(it=>`
+                <div class="guide-item" data-tab="${g.tab}" data-sub="${it.sub||''}">
+                  <div class="guide-item-icon">${it.icon}</div>
+                  <div class="guide-item-body">
+                    <div class="guide-item-name">${escapeHtml(it.name)}</div>
+                    <div class="guide-item-desc">${escapeHtml(it.desc)}</div>
+                  </div>
+                  <div class="guide-item-go">›</div>
+                </div>`).join('')}
+            </div>`).join('')}
+        </div>
+      </div>
+    </div>`;
+}
+
 function renderHome(target){
   const canEditAnnounce = isAdmin();
   target.innerHTML = `
@@ -1506,6 +1606,7 @@ function renderHome(target){
       <div class="entry-card" data-tab="fun"><div class="entry-icon">🎮</div><div class="entry-label">娱乐吧</div><div class="entry-sub">团建小游戏</div></div>
       <div class="entry-card" data-tab="profile"><div class="entry-icon">🧑</div><div class="entry-label">个人</div><div class="entry-sub">我的资料</div></div>
     </div>
+    ${renderFeatureGuide()}
     <div class="announce-card">
       <div class="section-head"><h2>📣 练习公告</h2>${canEditAnnounce? `<button class="footer-link" id="editAnnounceBtn" type="button">编辑</button>`:''}</div>
       <div class="announce-body" id="announceBody">${state.announcement? escapeHtml(state.announcement).replace(/\n/g,'<br>') : '暂无公告，好好练习吧 🎵'}</div>
@@ -1522,6 +1623,19 @@ function renderHome(target){
       renderMainBody();
     };
   });
+  target.querySelectorAll('.guide-item').forEach(c=>{
+    c.onclick = (ev)=>{
+      ev.stopPropagation();
+      state.activeTab = c.dataset.tab;
+      if(c.dataset.sub) state.scheduleSub = c.dataset.sub;
+      renderMainBody();
+    };
+  });
+  // 功能概览：一个总开关，点一下展开、再点收起
+  const guideToggle = document.getElementById('guideMainToggle');
+  if(guideToggle){
+    guideToggle.onclick = ()=> document.getElementById('guideWrap').classList.toggle('open');
+  }
   if(canManagePromo()){
   document.getElementById('bannerEditBtn').onclick = ()=> document.getElementById('bannerInput').click();
   document.getElementById('bannerInput').addEventListener('change', async (ev)=>{
@@ -4441,7 +4555,7 @@ function renderFriendsList(body, target){
       <div class="avatar-big" style="width:52px;height:52px;font-size:18px;margin:0 auto 8px;">${p2.avatar? `<img src="${p2.avatar}">` : (p2person.name[0]||'')}</div>
       <div style="font-weight:700;font-size:13px;">${p2person.name}</div>
       <div style="font-size:11px;color:var(--ink-soft);">${p2person.instrument}</div>`;
-    card.onclick = ()=>{ state.viewingFriend = p2person.id; renderActiveTab(); };
+    card.onclick = ()=>{ state.viewingFriend = p2person.id; state.viewingProfileOf = null; renderActiveTab(); };
     grid.appendChild(card);
   });
 }
@@ -4650,13 +4764,65 @@ function openTitleEditor(idx){
   };
 }
 
+/* 点开好友：先进聊天界面（像微信），再点头像才看资料 */
 function renderFriendProfile(target, idx){
+  if(state.viewingProfileOf === idx){ renderFriendDetail(target, idx); }
+  else{ renderChatView(target, idx); }
+}
+
+/* ---- 聊天界面：微信式，顶部一条 header，中间消息，底部输入框 ---- */
+function renderChatView(target, idx){
+  const mem = getPersonById(idx);
+  const prof = state.profiles[idx] || {};
+  target.innerHTML = `
+    <div class="chat-page">
+      <div class="chat-header">
+        <button class="chat-back" id="chatBack">‹</button>
+        <div class="chat-header-avatar" id="chatHeaderAvatar" title="点头像查看资料">
+          ${prof.avatar? `<img src="${prof.avatar}">` : (mem.name[0]||'')}
+        </div>
+        <div class="chat-header-info" id="chatHeaderInfo">
+          <div class="chat-header-name">${escapeHtml(mem.name)}</div>
+          <div class="chat-header-sub">${isGuestIdentity(idx)? '游客' : escapeHtml(mem.instrument||'')}</div>
+        </div>
+      </div>
+      <div class="chat-thread" id="chatThread"></div>
+      <div class="chat-input-row">
+        <input type="text" id="chatInput" placeholder="说点什么…">
+        <button class="btn btn-primary" id="chatSend" style="width:auto;padding:8px 18px;">发送</button>
+      </div>
+    </div>
+  `;
+  document.getElementById('chatBack').onclick = ()=>{ state.viewingFriend = null; state.viewingProfileOf = null; renderActiveTab(); };
+  const openProfile = ()=>{ state.viewingProfileOf = idx; renderActiveTab(); };
+  document.getElementById('chatHeaderAvatar').onclick = openProfile;
+  document.getElementById('chatHeaderInfo').onclick = openProfile;
+
+  markMessagesRead(idx);
+  renderChatThread(idx);
+
+  const sendMsg = ()=>{
+    const input = document.getElementById('chatInput');
+    const text = input.value.trim();
+    if(!text) return;
+    state.messages = state.messages || [];
+    state.messages.push({ id:'msg_'+Date.now(), from: state.identity, to: idx, text, ts: Date.now(), read:false });
+    input.value = '';
+    renderChatThread(idx); // 先立刻显示，不等网络
+    queueSave(); // 保存放到后台排队执行，不阻塞输入下一条
+  };
+  document.getElementById('chatSend').onclick = sendMsg;
+  document.getElementById('chatInput').addEventListener('keydown', ev=>{ if(ev.key==='Enter') sendMsg(); });
+}
+
+/* ---- 好友资料页：从聊天界面点头像进来 ---- */
+function renderFriendDetail(target, idx){
   const mem = getPersonById(idx);
   const prof = state.profiles[idx] || {};
   const isGuestFriend = isGuestIdentity(idx);
   const total = isGuestFriend ? null : totalCheckinCount(idx);
   target.innerHTML = `
-    <button class="back-link" id="backToMe">← 返回我的资料</button>
+    <button class="back-link" id="backToChat">← 返回聊天</button>
     <div class="profile-card">
       <div class="profile-top">
         <div class="avatar-big">${prof.avatar? `<img src="${prof.avatar}">` : (mem.name[0]||'')}</div>
@@ -4685,34 +4851,12 @@ function renderFriendProfile(target, idx){
       <div class="section-head"><h2>${escapeHtml(mem.name)} 的展示墙</h2></div>
       <div id="boardContainer"></div>
     </div>
-    <div class="chat-card">
-      <div class="section-head"><h2>和 ${escapeHtml(mem.name)} 聊天</h2></div>
-      <div class="chat-thread" id="chatThread"></div>
-      <div class="chat-input-row">
-        <input type="text" id="chatInput" placeholder="说点什么…">
-        <button class="btn btn-primary" id="chatSend" style="width:auto;padding:8px 16px;">发送</button>
-      </div>
-    </div>
   `;
-  document.getElementById('backToMe').onclick = ()=>{ state.viewingFriend = null; renderActiveTab(); };
+  document.getElementById('backToChat').onclick = ()=>{ state.viewingProfileOf = null; renderActiveTab(); };
   if(isAdmin() && !isGuestFriend){
     document.getElementById('editTitleBtn').onclick = ()=> openTitleEditor(idx);
   }
-  markMessagesRead(idx);
-  renderChatThread(idx);
   renderBoardSection(document.getElementById('boardContainer'), idx, false);
-  const sendMsg = ()=>{
-    const input = document.getElementById('chatInput');
-    const text = input.value.trim();
-    if(!text) return;
-    state.messages = state.messages || [];
-    state.messages.push({ id:'msg_'+Date.now(), from: state.identity, to: idx, text, ts: Date.now(), read:false });
-    input.value = '';
-    renderChatThread(idx); // 先立刻显示，不等网络
-    queueSave(); // 保存放到后台排队执行，不阻塞输入下一条
-  };
-  document.getElementById('chatSend').onclick = sendMsg;
-  document.getElementById('chatInput').addEventListener('keydown', ev=>{ if(ev.key==='Enter') sendMsg(); });
 }
 
 async function markMessagesRead(otherId){
