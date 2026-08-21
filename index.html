@@ -144,6 +144,7 @@ Resources:`;for(let t of c){if(!t||typeof t!=`string`)throw Error(`@supabase/aut
   .id-text{display:flex;flex-direction:column;line-height:1.4;}
   .id-text b{font-size:14px;}
   .id-text small{font-size:11.5px;color:var(--ink-soft);}
+  .guest-grid-scroll{max-height:280px;overflow-y:auto;padding-right:4px;}
   .id-btn-founder{grid-column:1 / -1;background:#FDF6E8;border-color:#EBD8A6;}
   .quick-card{background:var(--card);border:1px solid var(--line);border-radius:var(--radius);padding:18px 20px;margin-bottom:18px;display:flex;align-items:center;gap:16px;}
   .quick-card.rest{background:repeating-linear-gradient(135deg, var(--rest), var(--rest) 8px, #ece7d9 8px, #ece7d9 16px);border-color:var(--line);}
@@ -1280,7 +1281,10 @@ function renderVisitorChoice(){
       <div class="eyebrow">游客</div>
       <h1 style="font-family:'Noto Serif SC',serif;font-weight:900;margin:0 0 10px;">登录或创建游客账号</h1>
       <p class="sub">已经创建过账号就选自己的名字登录；没有的话在下面创建一个新账号，可以创建很多个。</p>
-      <div class="id-grid" id="guestGrid"></div>
+      <div class="cfg-field"><label>找自己的账号</label><input id="guestSearch" placeholder="账号多的时候，打几个字筛选"></div>
+      <div class="id-grid guest-grid-scroll" id="guestGrid"></div>
+      <p class="sub" style="margin-top:10px;font-size:12.5px;">列表里找不到自己？在上面搜索框里输入完整昵称，然后点下面这个按钮直接登录。</p>
+      <button class="btn btn-ghost" style="width:100%;margin-top:6px;" id="guestManualLogin">用输入的昵称登录</button>
       <div class="section-head" style="margin-top:22px;"><h2>创建新游客账号</h2></div>
       <div class="cfg-field"><label>昵称</label><input id="newGuestName" placeholder="给自己起个名字"></div>
       <div class="cfg-field"><label>你是谁？谁邀请你来的？</label><input id="newGuestIntro" placeholder="例如：我是坤坤的高中同学 / 杉菜邀请我来的"></div>
@@ -1290,14 +1294,37 @@ function renderVisitorChoice(){
     </div>`;
   document.getElementById('backToRole').onclick = renderRoleChoice;
   const grid = document.getElementById('guestGrid');
-  if(guests.length===0){ grid.innerHTML = `<div class="empty-hint" style="grid-column:1/-1;">还没有游客账号，在下面创建第一个吧</div>`; }
-  guests.forEach(g=>{
-    const b = document.createElement('button');
-    b.className = 'id-btn';
-    b.innerHTML = `<span class="id-dot" style="background:var(--amber)"></span><span class="id-text"><b>${escapeHtml(g.name)}</b><small>游客</small></span>`;
-    b.onclick = ()=> renderPasswordPrompt('guest:'+g.name, g.name, renderVisitorChoice);
-    grid.appendChild(b);
-  });
+  const searchBox = document.getElementById('guestSearch');
+  function paintGuests(keyword){
+    const kw = (keyword||'').trim().toLowerCase();
+    const shown = guests.filter(g=> !kw || g.name.toLowerCase().includes(kw));
+    grid.innerHTML = '';
+    if(guests.length===0){
+      grid.innerHTML = `<div class="empty-hint" style="grid-column:1/-1;">还没有游客账号，在下面创建第一个吧</div>`;
+      return;
+    }
+    if(shown.length===0){
+      grid.innerHTML = `<div class="empty-hint" style="grid-column:1/-1;">没有匹配的账号</div>`;
+      return;
+    }
+    shown.forEach(g=>{
+      const b = document.createElement('button');
+      b.className = 'id-btn';
+      b.innerHTML = `<span class="id-dot" style="background:var(--amber)"></span><span class="id-text"><b>${escapeHtml(g.name)}</b><small>游客</small></span>`;
+      b.onclick = ()=> renderPasswordPrompt('guest:'+g.name, g.name, renderVisitorChoice);
+      grid.appendChild(b);
+    });
+  }
+  paintGuests('');
+  searchBox.addEventListener('input', ()=> paintGuests(searchBox.value));
+  // 兜底：万一列表没刷新出来，直接按名字登录
+  document.getElementById('guestManualLogin').onclick = ()=>{
+    const name = searchBox.value.trim();
+    if(!name){ alert('先在上面输入你的完整昵称'); return; }
+    const exists = guests.some(g=>g.name===name) || (state.credentials && state.credentials['guest:'+name]!==undefined);
+    if(!exists){ alert('没找到这个昵称的账号，检查一下有没有打错，或者直接在下面重新创建一个'); return; }
+    renderPasswordPrompt('guest:'+name, name, renderVisitorChoice);
+  };
   document.getElementById('createGuestBtn').onclick = async ()=>{
     const name = document.getElementById('newGuestName').value.trim();
     const intro = document.getElementById('newGuestIntro').value.trim();
@@ -1308,6 +1335,10 @@ function renderVisitorChoice(){
     if(!intro){ alert('麻烦写一下你是谁、谁邀请你来的，方便大家认识你'); return; }
     if(pwd.length<4){ alert('密码至少4位'); return; }
     if(pwd!==pwd2){ alert('两次密码不一致'); return; }
+    // 先拉一次云端最新数据再写入：不然本地拿的是旧副本，
+    // 保存时会把别人刚注册的账号一起覆盖掉（这正是"第5个游客登录不了"的原因）
+    await pullLatest();
+    if((state.guests||[]).some(g=>g.name===name)){ alert('刚好有人用了这个名字，换一个吧'); return; }
     state.guests = state.guests || [];
     state.guests.push({ name, joinedAt: Date.now(), intro });
     state.credentials = state.credentials || {};
