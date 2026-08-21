@@ -372,6 +372,31 @@ Resources:`;for(let t of c){if(!t||typeof t!=`string`)throw Error(`@supabase/aut
   .uc-reveal-role.uc-role-spy{color:var(--danger);font-weight:700;}
   .uc-reveal-word{font-size:12.5px;color:var(--ink-soft);margin-left:auto;}
 
+  /* ---- 中国鸟能飞 ---- */
+  .bird-select-title{font-family:'Noto Serif SC',serif;font-weight:700;font-size:15px;margin-bottom:10px;}
+  .bird-char-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(88px,1fr));gap:10px;}
+  .bird-char{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 8px;cursor:pointer;font-family:inherit;transition:.15s;}
+  .bird-char:hover{border-color:var(--leaf);transform:translateY(-2px);}
+  .bird-char-img{width:52px;height:52px;border-radius:50%;margin:0 auto 6px;background:var(--leaf-light);display:flex;align-items:center;justify-content:center;overflow:hidden;font-weight:700;color:#fff;}
+  .bird-char-img img{width:100%;height:100%;object-fit:contain;}
+  .bird-char-name{font-size:12.5px;font-weight:700;text-align:center;}
+  .bird-rank{display:flex;flex-direction:column;gap:8px;}
+  .bird-rank-row{display:flex;align-items:center;gap:12px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 14px;}
+  .bird-rank-row.me{border-color:var(--leaf);background:var(--leaf-light);}
+  .bird-rank-no{width:28px;text-align:center;font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:14px;color:var(--ink-soft);flex:0 0 auto;}
+  .bird-rank-no.top{font-size:19px;}
+  .bird-rank-avatar{width:34px;height:34px;border-radius:50%;background:var(--leaf-light);display:flex;align-items:center;justify-content:center;overflow:hidden;font-weight:700;color:#fff;font-size:13px;flex:0 0 auto;}
+  .bird-rank-avatar img{width:100%;height:100%;object-fit:contain;}
+  .bird-rank-name{flex:1;font-weight:700;font-size:14px;min-width:0;}
+  .bird-rank-score{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:17px;color:var(--leaf);flex:0 0 auto;}
+  .bird-stage{position:relative;max-width:420px;margin:0 auto;border-radius:14px;overflow:hidden;border:1px solid var(--line);touch-action:none;}
+  #birdCanvas{width:100%;height:auto;display:block;touch-action:none;}
+  .bird-overlay{position:absolute;inset:0;background:rgba(34,51,40,.45);display:none;align-items:center;justify-content:center;cursor:pointer;}
+  .bird-overlay.show{display:flex;}
+  .bird-overlay-inner{background:var(--card);border-radius:14px;padding:22px 28px;text-align:center;}
+  .bird-overlay-title{font-family:'Noto Serif SC',serif;font-weight:700;font-size:19px;}
+  .bird-overlay-sub{font-size:13px;color:var(--ink-soft);margin-top:6px;}
+
   /* ---- 枪战对决 ---- */
   .sh-rotate-hint{display:none;align-items:center;justify-content:center;height:280px;font-size:18px;color:var(--ink-soft);text-align:center;background:var(--card);border-radius:14px;border:1px dashed var(--line);}
   .sh-stage{position:relative;width:100%;max-width:800px;margin:0 auto;aspect-ratio:800/450;background:#000;border-radius:12px;overflow:hidden;touch-action:none;}
@@ -666,6 +691,7 @@ let state = {
   showPublic: true,       // 没登录时先看对外展示页，点"进入内部小站"才去登录
   roles: null,            // 各模块负责人（管理员可改），null 表示用默认分工
   gear: [],               // 器材清单：[{id,name,category,status,owner,note,ts}]
+  birdScores: {},         // 中国鸟能飞：每个人的最高分 { personId: {score, charIdx, ts} }
   funGame: null,          // 娱乐吧当前打开的小游戏：null | 'undercover' | 'shooter'
   undercoverGame: null,   // 谁是卧底：共享的当前对局数据（见 getUndercoverGame）
   shooterGame: null,      // 实时对战：共享的当前对局数据（见 getShooterGame）
@@ -931,6 +957,7 @@ function applyRemoteData(data){
   state.songs = data.songs || DEFAULT_SONGS;
   state.roles = data.roles || DEFAULT_ROLES;
   state.gear = data.gear || [];
+  state.birdScores = data.birdScores || {};
 }
 
 function startRealtimeSync(){
@@ -979,7 +1006,7 @@ async function loadAll(){
     return;
   }
   if(!data){
-    data = { members: PRESET_MEMBERS, checkins: {}, meetings: [], posts: [], profiles: {}, guests: [], credentials: {}, messages: [], boards: {}, bandBanner: null, notifications: [], announcement: '', nameProposals: [], freezeTokens: {}, frozenDays: {}, freezeAwardMark: {}, teambuilds: [], dayMemories: {}, undercoverGame: null, shooterGame: null, praises: [], ledger: [], gigs: [], songs: DEFAULT_SONGS, roles: DEFAULT_ROLES, gear: [] };
+    data = { members: PRESET_MEMBERS, checkins: {}, meetings: [], posts: [], profiles: {}, guests: [], credentials: {}, messages: [], boards: {}, bandBanner: null, notifications: [], announcement: '', nameProposals: [], freezeTokens: {}, frozenDays: {}, freezeAwardMark: {}, teambuilds: [], dayMemories: {}, undercoverGame: null, shooterGame: null, praises: [], ledger: [], gigs: [], songs: DEFAULT_SONGS, roles: DEFAULT_ROLES, gear: [], birdScores: {} };
     try{ await remoteSet(data); }
     catch(e2){
       renderErrorScreen('初始化云端数据失败：' + e2.message);
@@ -1012,6 +1039,7 @@ async function loadAll(){
   state.songs = data.songs || DEFAULT_SONGS;
   state.roles = data.roles || DEFAULT_ROLES;
   state.gear = data.gear || [];
+  state.birdScores = data.birdScores || {};
   state.identity = loadIdentity();
   startRealtimeSync();
   renderRoot();
@@ -1047,6 +1075,7 @@ async function pullLatest(){
       state.songs = data.songs || DEFAULT_SONGS;
       state.roles = data.roles || DEFAULT_ROLES;
       state.gear = data.gear || [];
+      state.birdScores = data.birdScores || {};
     }
   }catch(e){ /* 拉取失败就先用本地已有数据 */ }
 }
@@ -1088,7 +1117,8 @@ async function saveAll(){
       gigs: state.gigs,
       songs: state.songs,
       roles: state.roles,
-      gear: state.gear
+      gear: state.gear,
+      birdScores: state.birdScores
     }), 15000, '保存');
   }catch(e){
     console.error('保存失败', e);
@@ -1691,6 +1721,7 @@ const UNDERCOVER_WORD_PAIRS = [
 function renderFunTab(target){
   if(state.funGame === 'undercover'){ renderUndercoverGame(target); return; }
   if(state.funGame === 'shooter'){ renderShooterGame(target); return; }
+  if(state.funGame === 'bird'){ renderBirdGame(target); return; }
   target.innerHTML = `
     <div class="section-head"><h2>🎮 娱乐吧</h2></div>
     <p class="sub" style="margin-bottom:14px;">团建、团综的时候一起玩，以后会陆续加更多小游戏。</p>
@@ -1705,10 +1736,16 @@ function renderFunTab(target){
         <div class="game-name">枪战对决</div>
         <div class="game-desc">实时操作角色，横屏对战</div>
       </div>
+      <div class="game-card" id="gameBird">
+        <div class="game-icon">🐦</div>
+        <div class="game-name">中国鸟能飞</div>
+        <div class="game-desc">选个角色，看谁飞得最远</div>
+      </div>
     </div>
   `;
   document.getElementById('gameUndercover').onclick = ()=>{ state.funGame = 'undercover'; renderFunTab(target); };
   document.getElementById('gameShooter').onclick = ()=>{ state.funGame = 'shooter'; renderFunTab(target); };
+  document.getElementById('gameBird').onclick = ()=>{ state.funGame = 'bird'; renderFunTab(target); };
 }
 
 function getUndercoverGame(){
@@ -1909,6 +1946,200 @@ function renderUndercoverEnded(target, game){
     await queueSave();
     renderUndercoverGame(target);
   };
+}
+
+/* ================= 中国鸟能飞：Flappy Bird 玩法 + 六个角色 + 排行榜 ================= */
+const BIRD_W = 420, BIRD_H = 620;
+let birdRAF = null, birdChar = null, birdKeyHandler = null;
+
+function renderBirdGame(target){
+  if(birdChar === null){ renderBirdCharSelect(target); }
+  else{ renderBirdPlay(target); }
+}
+
+/* ---- 选角色 + 排行榜 ---- */
+function renderBirdCharSelect(target){
+  const scores = state.birdScores || {};
+  const ranking = allPeople()
+    .map(p=>({ ...p, score: (scores[p.id]&&scores[p.id].score)||0, charIdx: scores[p.id]&&scores[p.id].charIdx }))
+    .filter(p=>p.score>0)
+    .sort((a,b)=>b.score-a.score);
+  const myBest = (scores[state.identity] && scores[state.identity].score) || 0;
+
+  target.innerHTML = `
+    <button class="back-link" id="backToGames">← 返回娱乐吧</button>
+    <div class="section-head"><h2>🐦 中国鸟能飞</h2></div>
+    <p class="sub" style="margin-bottom:14px;">点屏幕（或按空格）让它往上飞，穿过缝隙得一分，碰到管子或者掉地上就结束。你的最高分会记进排行榜。</p>
+
+    <div class="bird-select-title">选一个角色</div>
+    <div class="bird-char-grid" id="birdCharGrid">
+      ${(state.members||[]).map((m,i)=>`
+        <button type="button" class="bird-char" data-idx="${i}">
+          <div class="bird-char-img">${CHARACTER_AVATARS[i]? `<img src="${CHARACTER_AVATARS[i]}">` : (m.name[0]||'')}</div>
+          <div class="bird-char-name">${escapeHtml(m.name)}</div>
+        </button>`).join('')}
+    </div>
+
+    <div class="section-head" style="margin-top:24px;"><h2>🏆 积分排行榜</h2></div>
+    ${myBest? `<div class="banner">你的最高分是 ${myBest} 分${ranking.length&&String(ranking[0].id)===String(state.identity)? '，目前排第一 👑':''}</div>`:''}
+    <div class="bird-rank" id="birdRank">
+      ${ranking.length? ranking.map((p,i)=>`
+        <div class="bird-rank-row ${String(p.id)===String(state.identity)?'me':''}">
+          <div class="bird-rank-no ${i<3?'top':''}">${['🥇','🥈','🥉'][i] || (i+1)}</div>
+          <div class="bird-rank-avatar">${(p.charIdx!==undefined && CHARACTER_AVATARS[p.charIdx])? `<img src="${CHARACTER_AVATARS[p.charIdx]}">` : (p.name[0]||'')}</div>
+          <div class="bird-rank-name">${escapeHtml(p.name)}</div>
+          <div class="bird-rank-score">${p.score}</div>
+        </div>`).join('') : '<div class="empty-hint">还没有人玩过，来当第一个</div>'}
+    </div>
+  `;
+  document.getElementById('backToGames').onclick = ()=>{ stopBirdLoop(); state.funGame = null; birdChar = null; renderFunTab(target); };
+  target.querySelectorAll('.bird-char').forEach(b=>{
+    b.onclick = ()=>{ birdChar = Number(b.dataset.idx); renderBirdGame(target); };
+  });
+}
+
+/* ---- 游戏本体 ---- */
+function renderBirdPlay(target){
+  const charName = (state.members[birdChar]||{}).name || '玩家';
+  target.innerHTML = `
+    <button class="back-link" id="birdBack">← 换个角色</button>
+    <div class="bird-stage">
+      <canvas id="birdCanvas" width="${BIRD_W}" height="${BIRD_H}"></canvas>
+      <div class="bird-overlay" id="birdOverlay">
+        <div class="bird-overlay-inner">
+          <div class="bird-overlay-title" id="birdOverlayTitle">${escapeHtml(charName)}，准备好了吗？</div>
+          <div class="bird-overlay-sub" id="birdOverlaySub">点一下屏幕开始</div>
+        </div>
+      </div>
+    </div>
+  `;
+  document.getElementById('birdBack').onclick = ()=>{ stopBirdLoop(); birdChar = null; renderBirdGame(target); };
+
+  const canvas = document.getElementById('birdCanvas');
+  const ctx = canvas.getContext('2d');
+  const overlay = document.getElementById('birdOverlay');
+  const avatarSrc = CHARACTER_AVATARS[birdChar];
+  let avatarImg = null;
+  if(avatarSrc){ avatarImg = new Image(); avatarImg.src = avatarSrc; }
+
+  const GRAV = 0.42, FLAP = -7.4, PIPE_W = 62, GAP = 168, SPEED = 2.5;
+  let bird, pipes, score, best, running, dead, started, frame;
+
+  function reset(){
+    bird = { x:110, y:BIRD_H/2, vy:0, r:22 };
+    pipes = [];
+    score = 0; frame = 0;
+    running = false; dead = false; started = false;
+    best = (state.birdScores && state.birdScores[state.identity] && state.birdScores[state.identity].score) || 0;
+  }
+  reset();
+
+  function spawnPipe(){
+    const margin = 70;
+    const top = margin + Math.random()*(BIRD_H - GAP - margin*2 - 60);
+    pipes.push({ x: BIRD_W, top, passed:false });
+  }
+
+  function flap(){
+    if(dead){ // 死了之后再点 = 重开
+      reset();
+      overlay.classList.remove('show');
+      running = true; started = true;
+      return;
+    }
+    if(!started){
+      started = true; running = true;
+      overlay.classList.remove('show');
+    }
+    bird.vy = FLAP;
+  }
+
+  async function gameOver(){
+    dead = true; running = false;
+    const prev = (state.birdScores[state.identity] && state.birdScores[state.identity].score) || 0;
+    const isNewBest = score > prev;
+    if(isNewBest){
+      state.birdScores[state.identity] = { score, charIdx: birdChar, ts: Date.now() };
+      queueSave();
+    }
+    document.getElementById('birdOverlayTitle').textContent = isNewBest? `新纪录！${score} 分 🎉` : `${score} 分`;
+    document.getElementById('birdOverlaySub').textContent = isNewBest? '点一下再来一局' : `你的最高分 ${Math.max(prev,score)} 分 · 点一下再来`;
+    overlay.classList.add('show');
+  }
+
+  function loop(){
+    birdRAF = requestAnimationFrame(loop);
+    // 背景
+    ctx.fillStyle = '#DCE9F5'; ctx.fillRect(0,0,BIRD_W,BIRD_H);
+    ctx.fillStyle = '#C4D6C6'; ctx.fillRect(0,BIRD_H-52,BIRD_W,52);
+
+    if(running){
+      frame++;
+      bird.vy += GRAV; bird.y += bird.vy;
+      if(frame % 92 === 0) spawnPipe();
+      pipes.forEach(p=>{ p.x -= SPEED; });
+      pipes = pipes.filter(p=> p.x + PIPE_W > -10);
+      // 计分
+      pipes.forEach(p=>{
+        if(!p.passed && p.x + PIPE_W < bird.x){ p.passed = true; score++; }
+      });
+      // 撞管子 / 落地 / 顶出界
+      for(const p of pipes){
+        const inX = bird.x + bird.r > p.x && bird.x - bird.r < p.x + PIPE_W;
+        const inGap = bird.y - bird.r > p.top && bird.y + bird.r < p.top + GAP;
+        if(inX && !inGap){ gameOver(); break; }
+      }
+      if(bird.y + bird.r > BIRD_H-52 || bird.y - bird.r < 0){ gameOver(); }
+    }
+
+    // 管子
+    pipes.forEach(p=>{
+      ctx.fillStyle = '#5C8A6B';
+      ctx.fillRect(p.x, 0, PIPE_W, p.top);
+      ctx.fillRect(p.x, p.top+GAP, PIPE_W, BIRD_H-52-(p.top+GAP));
+      ctx.fillStyle = '#4C7A5E';
+      ctx.fillRect(p.x-4, p.top-18, PIPE_W+8, 18);
+      ctx.fillRect(p.x-4, p.top+GAP, PIPE_W+8, 18);
+    });
+
+    // 角色
+    ctx.save();
+    ctx.translate(bird.x, bird.y);
+    ctx.rotate(Math.max(-0.5, Math.min(1.1, bird.vy/14)));
+    if(avatarImg && avatarImg.complete && avatarImg.naturalWidth){
+      ctx.save();
+      ctx.beginPath(); ctx.arc(0,0,bird.r,0,Math.PI*2); ctx.clip();
+      ctx.drawImage(avatarImg, -bird.r, -bird.r, bird.r*2, bird.r*2);
+      ctx.restore();
+    }else{
+      ctx.fillStyle = getPersonColor(birdChar);
+      ctx.beginPath(); ctx.arc(0,0,bird.r,0,Math.PI*2); ctx.fill();
+    }
+    ctx.strokeStyle = '#223328'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(0,0,bird.r,0,Math.PI*2); ctx.stroke();
+    ctx.restore();
+
+    // 分数
+    ctx.fillStyle = '#223328';
+    ctx.font = 'bold 40px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(String(score), BIRD_W/2, 66);
+    if(best>0){
+      ctx.font = '13px sans-serif'; ctx.fillStyle = 'rgba(34,51,40,.55)';
+      ctx.fillText(`最高 ${best}`, BIRD_W/2, 90);
+    }
+  }
+
+  overlay.classList.add('show');
+  canvas.addEventListener('pointerdown', ev=>{ ev.preventDefault(); flap(); });
+  overlay.addEventListener('pointerdown', ev=>{ ev.preventDefault(); flap(); });
+  birdKeyHandler = (ev)=>{ if(ev.code==='Space' || ev.key===' '){ ev.preventDefault(); flap(); } };
+  window.addEventListener('keydown', birdKeyHandler);
+  loop();
+}
+
+function stopBirdLoop(){
+  if(birdRAF){ cancelAnimationFrame(birdRAF); birdRAF = null; }
+  if(birdKeyHandler){ window.removeEventListener('keydown', birdKeyHandler); birdKeyHandler = null; }
 }
 
 /* ================= 枪战对决：实时同步的横屏小游戏 ================= */
