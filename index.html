@@ -374,6 +374,11 @@ Resources:`;for(let t of c){if(!t||typeof t!=`string`)throw Error(`@supabase/aut
   .uc-reveal-word{font-size:12.5px;color:var(--ink-soft);margin-left:auto;}
 
   /* ---- 中国鸟能飞 ---- */
+  .bird-orb-guide{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin-bottom:16px;}
+  .bird-orb-item{display:flex;align-items:center;gap:9px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:9px 12px;}
+  .bird-orb-icon{width:30px;height:30px;border-radius:50%;background:#fff;border:2.5px solid;display:flex;align-items:center;justify-content:center;font-size:15px;flex:0 0 auto;}
+  .bird-orb-item b{display:block;font-size:13px;}
+  .bird-orb-item small{display:block;font-size:11px;color:var(--ink-soft);margin-top:1px;}
   .bird-select-title{font-family:'Noto Serif SC',serif;font-weight:700;font-size:15px;margin-bottom:10px;}
   .bird-char-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(88px,1fr));gap:10px;}
   .bird-char{background:var(--card);border:1px solid var(--line);border-radius:14px;padding:12px 8px;cursor:pointer;font-family:inherit;transition:.15s;}
@@ -2000,7 +2005,12 @@ function renderBirdCharSelect(target){
   target.innerHTML = `
     <button class="back-link" id="backToGames">← 返回娱乐吧</button>
     <div class="section-head"><h2>🐦 中国鸟能飞</h2></div>
-    <p class="sub" style="margin-bottom:14px;">点屏幕（或按空格）让它往上飞，穿过缝隙得一分，碰到管子或者掉地上就结束。你的最高分会记进排行榜。</p>
+    <p class="sub" style="margin-bottom:10px;">点屏幕（或按空格）让它往上飞，穿过缝隙得一分，碰到管子或者掉地上就结束。你的最高分会记进排行榜。</p>
+    <div class="bird-orb-guide">
+      <div class="bird-orb-item"><span class="bird-orb-icon" style="border-color:#4C7A5E">🛡</span><div><b>复活丸</b><small>下次撞击不死，可叠加</small></div></div>
+      <div class="bird-orb-item"><span class="bird-orb-icon" style="border-color:#E2A33D">✨</span><div><b>双倍丸</b><small>10秒内过管子得分翻倍</small></div></div>
+      <div class="bird-orb-item"><span class="bird-orb-icon" style="border-color:#6E85A6">⚡</span><div><b>加速丸</b><small>5秒内无视管子加速冲</small></div></div>
+    </div>
 
     <div class="bird-select-title">选一个角色</div>
     <div class="bird-char-grid" id="birdCharGrid">
@@ -2054,21 +2064,46 @@ function renderBirdPlay(target){
   if(avatarSrc){ avatarImg = new Image(); avatarImg.src = avatarSrc; }
 
   const GRAV = 0.42, FLAP = -7.4, PIPE_W = 62, GAP = 168, SPEED = 2.5;
-  let bird, pipes, score, best, running, dead, started, frame;
+  /* 三种效果丸：会随机刷在管子缝隙中间
+     🛡 复活丸：吃了之后下次撞击不死，可以叠加
+     ✨ 双倍丸：接下来10秒过管子得分翻倍
+     ⚡ 加速丸：接下来5秒无视管子、加速冲过去 */
+  const ORB_TYPES = ['revive','double','dash'];
+  const ORB_STYLE = {
+    revive:{ icon:'🛡', color:'#4C7A5E', label:'复活' },
+    double:{ icon:'✨', color:'#E2A33D', label:'双倍' },
+    dash:  { icon:'⚡', color:'#6E85A6', label:'加速' }
+  };
+  let bird, pipes, orbs, score, best, running, dead, started, frame;
+  let revives, doubleUntil, dashUntil;
 
   function reset(){
     bird = { x:110, y:BIRD_H/2, vy:0, r:22 };
-    pipes = [];
+    pipes = []; orbs = [];
     score = 0; frame = 0;
     running = false; dead = false; started = false;
+    revives = 0; doubleUntil = 0; dashUntil = 0;
     best = (state.birdScores && state.birdScores[state.identity] && state.birdScores[state.identity].score) || 0;
   }
   reset();
+
+  const nowMs = ()=> performance.now();
+  const hasDouble = ()=> nowMs() < doubleUntil;
+  const hasDash = ()=> nowMs() < dashUntil;
 
   function spawnPipe(){
     const margin = 70;
     const top = margin + Math.random()*(BIRD_H - GAP - margin*2 - 60);
     pipes.push({ x: BIRD_W, top, passed:false });
+    // 大约六成概率在这个缝隙中间放一颗效果丸
+    if(Math.random() < 0.6){
+      orbs.push({
+        x: BIRD_W + PIPE_W/2,
+        y: top + GAP/2 + (Math.random()*40-20),
+        type: ORB_TYPES[Math.floor(Math.random()*ORB_TYPES.length)],
+        r: 15, taken:false
+      });
+    }
   }
 
   function flap(){
@@ -2107,20 +2142,55 @@ function renderBirdPlay(target){
     if(running){
       frame++;
       bird.vy += GRAV; bird.y += bird.vy;
+      const curSpeed = hasDash() ? SPEED*2.4 : SPEED;   // 加速丸：整体推进变快
       if(frame % 92 === 0) spawnPipe();
-      pipes.forEach(p=>{ p.x -= SPEED; });
+      pipes.forEach(p=>{ p.x -= curSpeed; });
+      orbs.forEach(o=>{ o.x -= curSpeed; });
       pipes = pipes.filter(p=> p.x + PIPE_W > -10);
-      // 计分
-      pipes.forEach(p=>{
-        if(!p.passed && p.x + PIPE_W < bird.x){ p.passed = true; score++; }
+      orbs = orbs.filter(o=> o.x > -30 && !o.taken);
+      // 吃效果丸
+      orbs.forEach(o=>{
+        if(o.taken) return;
+        if(Math.hypot(bird.x-o.x, bird.y-o.y) < bird.r + o.r){
+          o.taken = true;
+          if(o.type==='revive') revives++;                       // 可以叠加
+          else if(o.type==='double') doubleUntil = nowMs()+10000; // 10秒
+          else if(o.type==='dash') dashUntil = nowMs()+5000;      // 5秒
+        }
       });
-      // 撞管子 / 落地 / 顶出界
-      for(const p of pipes){
-        const inX = bird.x + bird.r > p.x && bird.x - bird.r < p.x + PIPE_W;
-        const inGap = bird.y - bird.r > p.top && bird.y + bird.r < p.top + GAP;
-        if(inX && !inGap){ gameOver(); break; }
+      // 计分（双倍丸生效时每根管子算2分）
+      pipes.forEach(p=>{
+        if(!p.passed && p.x + PIPE_W < bird.x){ p.passed = true; score += hasDouble()? 2 : 1; }
+      });
+      // 撞管子：加速丸期间无视管子；有复活丸就抵消一次
+      if(!hasDash()){
+        for(const p of pipes){
+          const inX = bird.x + bird.r > p.x && bird.x - bird.r < p.x + PIPE_W;
+          const inGap = bird.y - bird.r > p.top && bird.y + bird.r < p.top + GAP;
+          if(inX && !inGap){
+            if(revives > 0){
+              revives--;
+              p.passed = true;                 // 这根管子当作已通过，避免卡在里面反复触发
+              bird.y = p.top + GAP/2;          // 把它挪到缝隙中间
+              bird.vy = 0;
+              dashUntil = nowMs() + 900;       // 给一点无敌时间脱离
+            }else{
+              gameOver();
+            }
+            break;
+          }
+        }
       }
-      if(bird.y + bird.r > BIRD_H-52 || bird.y - bird.r < 0){ gameOver(); }
+      // 落地和顶出界：复活丸同样能救一次
+      if(bird.y + bird.r > BIRD_H-52 || bird.y - bird.r < 0){
+        if(revives > 0){
+          revives--;
+          bird.y = BIRD_H/2; bird.vy = 0;
+          dashUntil = nowMs() + 900;
+        }else{
+          gameOver();
+        }
+      }
     }
 
     // 管子
@@ -2131,6 +2201,19 @@ function renderBirdPlay(target){
       ctx.fillStyle = '#4C7A5E';
       ctx.fillRect(p.x-4, p.top-18, PIPE_W+8, 18);
       ctx.fillRect(p.x-4, p.top+GAP, PIPE_W+8, 18);
+    });
+
+    // 效果丸
+    orbs.forEach(o=>{
+      if(o.taken) return;
+      const st = ORB_STYLE[o.type];
+      ctx.save();
+      ctx.beginPath(); ctx.arc(o.x, o.y, o.r, 0, Math.PI*2);
+      ctx.fillStyle = '#fff'; ctx.fill();
+      ctx.lineWidth = 3; ctx.strokeStyle = st.color; ctx.stroke();
+      ctx.font = '16px sans-serif'; ctx.textAlign='center'; ctx.textBaseline='middle';
+      ctx.fillText(st.icon, o.x, o.y+1);
+      ctx.restore();
     });
 
     // 角色
@@ -2146,8 +2229,15 @@ function renderBirdPlay(target){
       ctx.fillStyle = getPersonColor(birdChar);
       ctx.beginPath(); ctx.arc(0,0,bird.r,0,Math.PI*2); ctx.fill();
     }
-    ctx.strokeStyle = '#223328'; ctx.lineWidth = 2;
+    ctx.strokeStyle = hasDash()? '#6E85A6' : '#223328';
+    ctx.lineWidth = hasDash()? 4 : 2;
     ctx.beginPath(); ctx.arc(0,0,bird.r,0,Math.PI*2); ctx.stroke();
+    if(revives > 0){ // 有复活丸时套一圈护盾
+      ctx.strokeStyle = '#4C7A5E'; ctx.lineWidth = 2.5;
+      ctx.setLineDash([5,4]);
+      ctx.beginPath(); ctx.arc(0,0,bird.r+7,0,Math.PI*2); ctx.stroke();
+      ctx.setLineDash([]);
+    }
     ctx.restore();
 
     // 分数
@@ -2157,6 +2247,16 @@ function renderBirdPlay(target){
     if(best>0){
       ctx.font = '13px sans-serif'; ctx.fillStyle = 'rgba(34,51,40,.55)';
       ctx.fillText(`最高 ${best}`, BIRD_W/2, 90);
+    }
+    // 当前生效的效果
+    const tags = [];
+    if(revives>0) tags.push(`🛡×${revives}`);
+    if(hasDouble()) tags.push(`✨双倍 ${Math.ceil((doubleUntil-nowMs())/1000)}s`);
+    if(hasDash()) tags.push(`⚡加速 ${Math.ceil((dashUntil-nowMs())/1000)}s`);
+    if(tags.length){
+      ctx.font = 'bold 14px sans-serif'; ctx.textAlign='center';
+      ctx.fillStyle = 'rgba(34,51,40,.8)';
+      ctx.fillText(tags.join('   '), BIRD_W/2, BIRD_H-22);
     }
   }
 
