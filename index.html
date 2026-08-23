@@ -373,6 +373,9 @@ Resources:`;for(let t of c){if(!t||typeof t!=`string`)throw Error(`@supabase/aut
   .uc-reveal-role.uc-role-spy{color:var(--danger);font-weight:700;}
   .uc-reveal-word{font-size:12.5px;color:var(--ink-soft);margin-left:auto;}
 
+  .stack-stage{position:relative;max-width:420px;margin:0 auto;border-radius:14px;overflow:hidden;border:1px solid var(--line);touch-action:none;}
+  #stackCanvas{width:100%;height:auto;display:block;touch-action:none;}
+
   /* ---- 中国鸟能飞 ---- */
   .bird-orb-guide{display:grid;grid-template-columns:repeat(auto-fit,minmax(180px,1fr));gap:8px;margin-bottom:16px;}
   .bird-orb-item{display:flex;align-items:center;gap:9px;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:9px 12px;}
@@ -698,6 +701,7 @@ let state = {
   roles: null,            // 各模块负责人（管理员可改），null 表示用默认分工
   gear: [],               // 器材清单：[{id,name,category,status,owner,note,ts}]
   birdScores: {},         // 中国鸟能飞：每个人的最高分 { personId: {score, charIdx, ts} }
+  stackScores: {},        // 皮鼓爹跌叠：每个人的最高层数 { personId: {score, ts} }
   funGame: null,          // 娱乐吧当前打开的小游戏：null | 'undercover' | 'shooter'
   undercoverGame: null,   // 谁是卧底：共享的当前对局数据（见 getUndercoverGame）
   shooterGame: null,      // 实时对战：共享的当前对局数据（见 getShooterGame）
@@ -964,6 +968,7 @@ function applyRemoteData(data){
   state.roles = data.roles || DEFAULT_ROLES;
   state.gear = data.gear || [];
   state.birdScores = data.birdScores || {};
+  state.stackScores = data.stackScores || {};
 }
 
 function startRealtimeSync(){
@@ -1012,7 +1017,7 @@ async function loadAll(){
     return;
   }
   if(!data){
-    data = { members: PRESET_MEMBERS, checkins: {}, meetings: [], posts: [], profiles: {}, guests: [], credentials: {}, messages: [], boards: {}, bandBanner: null, notifications: [], announcement: '', nameProposals: [], freezeTokens: {}, frozenDays: {}, freezeAwardMark: {}, teambuilds: [], dayMemories: {}, undercoverGame: null, shooterGame: null, praises: [], ledger: [], gigs: [], songs: DEFAULT_SONGS, roles: DEFAULT_ROLES, gear: [], birdScores: {} };
+    data = { members: PRESET_MEMBERS, checkins: {}, meetings: [], posts: [], profiles: {}, guests: [], credentials: {}, messages: [], boards: {}, bandBanner: null, notifications: [], announcement: '', nameProposals: [], freezeTokens: {}, frozenDays: {}, freezeAwardMark: {}, teambuilds: [], dayMemories: {}, undercoverGame: null, shooterGame: null, praises: [], ledger: [], gigs: [], songs: DEFAULT_SONGS, roles: DEFAULT_ROLES, gear: [], birdScores: {}, stackScores: {} };
     try{ await remoteSet(data); }
     catch(e2){
       renderErrorScreen('初始化云端数据失败：' + e2.message);
@@ -1046,6 +1051,7 @@ async function loadAll(){
   state.roles = data.roles || DEFAULT_ROLES;
   state.gear = data.gear || [];
   state.birdScores = data.birdScores || {};
+  state.stackScores = data.stackScores || {};
   state.identity = loadIdentity();
   startRealtimeSync();
   renderRoot();
@@ -1082,6 +1088,7 @@ async function pullLatest(){
       state.roles = data.roles || DEFAULT_ROLES;
       state.gear = data.gear || [];
       state.birdScores = data.birdScores || {};
+      state.stackScores = data.stackScores || {};
     }
   }catch(e){ /* 拉取失败就先用本地已有数据 */ }
 }
@@ -1124,7 +1131,8 @@ async function saveAll(){
       songs: state.songs,
       roles: state.roles,
       gear: state.gear,
-      birdScores: state.birdScores
+      birdScores: state.birdScores,
+      stackScores: state.stackScores
     }), 15000, '保存');
   }catch(e){
     console.error('保存失败', e);
@@ -1758,6 +1766,7 @@ function renderFunTab(target){
   if(state.funGame === 'undercover'){ renderUndercoverGame(target); return; }
   if(state.funGame === 'shooter'){ renderShooterGame(target); return; }
   if(state.funGame === 'bird'){ renderBirdGame(target); return; }
+  if(state.funGame === 'stack'){ renderStackGame(target); return; }
   target.innerHTML = `
     <div class="section-head"><h2>🎮 娱乐吧</h2></div>
     <p class="sub" style="margin-bottom:14px;">团建、团综的时候一起玩，以后会陆续加更多小游戏。</p>
@@ -1777,11 +1786,17 @@ function renderFunTab(target){
         <div class="game-name">中国鸟能飞</div>
         <div class="game-desc">选个角色，看谁飞得最远</div>
       </div>
+      <div class="game-card" id="gameStack">
+        <div class="game-icon">🏗</div>
+        <div class="game-name">皮鼓爹跌叠</div>
+        <div class="game-desc">点一下放下，看谁叠得最高</div>
+      </div>
     </div>
   `;
   document.getElementById('gameUndercover').onclick = ()=>{ state.funGame = 'undercover'; renderFunTab(target); };
   document.getElementById('gameShooter').onclick = ()=>{ state.funGame = 'shooter'; renderFunTab(target); };
   document.getElementById('gameBird').onclick = ()=>{ state.funGame = 'bird'; renderFunTab(target); };
+  document.getElementById('gameStack').onclick = ()=>{ state.funGame = 'stack'; renderFunTab(target); };
 }
 
 function getUndercoverGame(){
@@ -1984,6 +1999,179 @@ function renderUndercoverEnded(target, game){
   };
 }
 
+/* ================= 皮鼓爹跌叠：叠罗汉，点一下放下，看谁叠得高 ================= */
+const STACK_W = 420, STACK_H = 620;
+let stackRAF = null, stackKeyHandler = null;
+
+function renderStackGame(target){
+  const scores = state.stackScores || {};
+  const ranking = allPeople()
+    .map(p=>({ ...p, score:(scores[p.id]&&scores[p.id].score)||0 }))
+    .filter(p=>p.score>0)
+    .sort((a,b)=>b.score-a.score);
+  const myBest = (scores[state.identity] && scores[state.identity].score) || 0;
+
+  target.innerHTML = `
+    <button class="back-link" id="backToGames">← 返回娱乐吧</button>
+    <div class="section-head"><h2>🏗 皮鼓爹跌叠</h2></div>
+    <p class="sub" style="margin-bottom:12px;">头顶那块会左右移动，点屏幕（或按空格）把它放下。对齐得越准塔越稳，没对齐的部分会被削掉；削到没有就结束。完美对齐会有奖励，塔越高块移动越快。</p>
+    <div class="stack-stage">
+      <canvas id="stackCanvas" width="${STACK_W}" height="${STACK_H}"></canvas>
+      <div class="bird-overlay show" id="stackOverlay">
+        <div class="bird-overlay-inner">
+          <div class="bird-overlay-title" id="stackOverlayTitle">准备好了吗？</div>
+          <div class="bird-overlay-sub" id="stackOverlaySub">点一下屏幕开始</div>
+        </div>
+      </div>
+    </div>
+    <div class="section-head" style="margin-top:24px;"><h2>🏆 积分排行榜</h2></div>
+    ${myBest? `<div class="banner">你最高叠到 ${myBest} 层${ranking.length&&String(ranking[0].id)===String(state.identity)? '，目前排第一 👑':''}</div>`:''}
+    <div class="bird-rank">
+      ${ranking.length? ranking.map((p,i)=>`
+        <div class="bird-rank-row ${String(p.id)===String(state.identity)?'me':''}">
+          <div class="bird-rank-no ${i<3?'top':''}">${['🥇','🥈','🥉'][i] || (i+1)}</div>
+          <div class="bird-rank-name">${escapeHtml(p.name)}</div>
+          <div class="bird-rank-score">${p.score} 层</div>
+        </div>`).join('') : '<div class="empty-hint">还没有人玩过，来当第一个</div>'}
+    </div>
+  `;
+  document.getElementById('backToGames').onclick = ()=>{ stopStackLoop(); state.funGame = null; renderFunTab(target); };
+
+  const canvas = document.getElementById('stackCanvas');
+  const ctx = canvas.getContext('2d');
+  const overlay = document.getElementById('stackOverlay');
+
+  // 预载六个成员头像，轮流当方块
+  const imgs = (state.members||[]).map((m,i)=>{
+    if(!CHARACTER_AVATARS[i]) return null;
+    const im = new Image(); im.src = CHARACTER_AVATARS[i]; return im;
+  });
+
+  const BLOCK_H = 42, BASE_W = 200;
+  let tower, moving, score, best, running, dead, camY, perfectFlash;
+
+  function reset(){
+    tower = [{ x:(STACK_W-BASE_W)/2, w:BASE_W, idx:0 }];
+    score = 0; camY = 0; perfectFlash = 0;
+    running = false; dead = false;
+    best = (state.stackScores && state.stackScores[state.identity] && state.stackScores[state.identity].score) || 0;
+    spawnMoving();
+  }
+  function spawnMoving(){
+    const last = tower[tower.length-1];
+    const speed = Math.min(5.4, 1.8 + tower.length*0.16); // 越高越快
+    moving = { x: 0, w:last.w, dir:1, speed, idx: tower.length % Math.max(1,(state.members||[]).length) };
+  }
+  reset();
+
+  function drop(){
+    if(dead){ reset(); overlay.classList.remove('show'); running = true; return; }
+    if(!running){ running = true; overlay.classList.remove('show'); return; }
+    const last = tower[tower.length-1];
+    const diff = moving.x - last.x;
+    const overlap = moving.w - Math.abs(diff);
+    if(overlap <= 0){ gameOver(); return; }
+    // 完美对齐（误差很小）：不削减，还给个提示
+    if(Math.abs(diff) < 5){
+      moving.x = last.x; moving.w = last.w;
+      perfectFlash = 22;
+      score += 2;                       // 完美多给一分
+    }else{
+      moving.x = diff > 0 ? moving.x : last.x;
+      moving.w = overlap;
+      score += 1;
+    }
+    tower.push({ x: moving.x, w: moving.w, idx: moving.idx });
+    camY += BLOCK_H;                    // 镜头跟着往上走
+    spawnMoving();
+  }
+
+  function gameOver(){
+    dead = true; running = false;
+    const prev = (state.stackScores[state.identity] && state.stackScores[state.identity].score) || 0;
+    const isNewBest = score > prev;
+    if(isNewBest){
+      state.stackScores[state.identity] = { score, ts: Date.now() };
+      queueSave();
+    }
+    document.getElementById('stackOverlayTitle').textContent = isNewBest? `新纪录！${score} 层 🎉` : `${score} 层`;
+    document.getElementById('stackOverlaySub').textContent = isNewBest? '点一下再来一局' : `你的最高 ${Math.max(prev,score)} 层 · 点一下再来`;
+    overlay.classList.add('show');
+  }
+
+  function drawBlock(b, y){
+    const im = imgs[b.idx];
+    ctx.save();
+    ctx.beginPath();
+    const r = 8;
+    ctx.roundRect ? ctx.roundRect(b.x, y, b.w, BLOCK_H, r) : ctx.rect(b.x, y, b.w, BLOCK_H);
+    ctx.closePath();
+    ctx.fillStyle = getPersonColor(b.idx);
+    ctx.fill();
+    if(im && im.complete && im.naturalWidth){
+      ctx.clip();
+      // 头像居中平铺在方块上
+      const size = BLOCK_H - 6;
+      ctx.drawImage(im, b.x + b.w/2 - size/2, y + 3, size, size);
+    }
+    ctx.restore();
+    ctx.strokeStyle = 'rgba(34,51,40,.45)'; ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.roundRect ? ctx.roundRect(b.x, y, b.w, BLOCK_H, 8) : ctx.rect(b.x, y, b.w, BLOCK_H);
+    ctx.stroke();
+  }
+
+  function loop(){
+    stackRAF = requestAnimationFrame(loop);
+    ctx.fillStyle = '#DCE9F5'; ctx.fillRect(0,0,STACK_W,STACK_H);
+    ctx.fillStyle = '#C4D6C6'; ctx.fillRect(0,STACK_H-40,STACK_W,40);
+
+    if(running && !dead){
+      moving.x += moving.dir * moving.speed;
+      if(moving.x <= 0){ moving.x = 0; moving.dir = 1; }
+      if(moving.x + moving.w >= STACK_W){ moving.x = STACK_W - moving.w; moving.dir = -1; }
+    }
+
+    // 已经叠好的塔（从下往上画，镜头跟随）
+    const baseY = STACK_H - 40 - BLOCK_H;
+    tower.forEach((b,i)=>{
+      const y = baseY - i*BLOCK_H + camY;
+      if(y > -BLOCK_H && y < STACK_H) drawBlock(b, y);
+    });
+    // 正在移动的那块
+    const movY = baseY - tower.length*BLOCK_H + camY;
+    if(!dead) drawBlock(moving, movY);
+
+    // 完美对齐的闪光提示
+    if(perfectFlash > 0){
+      perfectFlash--;
+      ctx.fillStyle = `rgba(226,163,61,${perfectFlash/22})`;
+      ctx.font = 'bold 22px sans-serif'; ctx.textAlign='center';
+      ctx.fillText('完美！+2', STACK_W/2, movY + BLOCK_H + 34);
+    }
+
+    // 分数
+    ctx.fillStyle = '#223328';
+    ctx.font = 'bold 38px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(String(score), STACK_W/2, 60);
+    if(best>0){
+      ctx.font = '13px sans-serif'; ctx.fillStyle = 'rgba(34,51,40,.55)';
+      ctx.fillText(`最高 ${best} 层`, STACK_W/2, 84);
+    }
+  }
+
+  canvas.addEventListener('pointerdown', ev=>{ ev.preventDefault(); drop(); });
+  overlay.addEventListener('pointerdown', ev=>{ ev.preventDefault(); drop(); });
+  stackKeyHandler = (ev)=>{ if(ev.code==='Space' || ev.key===' '){ ev.preventDefault(); drop(); } };
+  window.addEventListener('keydown', stackKeyHandler);
+  loop();
+}
+
+function stopStackLoop(){
+  if(stackRAF){ cancelAnimationFrame(stackRAF); stackRAF = null; }
+  if(stackKeyHandler){ window.removeEventListener('keydown', stackKeyHandler); stackKeyHandler = null; }
+}
+
 /* ================= 中国鸟能飞：Flappy Bird 玩法 + 六个角色 + 排行榜 ================= */
 const BIRD_W = 420, BIRD_H = 620;
 let birdRAF = null, birdChar = null, birdKeyHandler = null;
@@ -2095,8 +2283,8 @@ function renderBirdPlay(target){
     const margin = 70;
     const top = margin + Math.random()*(BIRD_H - GAP - margin*2 - 60);
     pipes.push({ x: BIRD_W, top, passed:false });
-    // 大约六成概率在这个缝隙中间放一颗效果丸
-    if(Math.random() < 0.6){
+    // 大约两成概率在这个缝隙中间放一颗效果丸（差不多每五根管子出一颗）
+    if(Math.random() < 0.2){
       orbs.push({
         x: BIRD_W + PIPE_W/2,
         y: top + GAP/2 + (Math.random()*40-20),
