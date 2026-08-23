@@ -373,6 +373,23 @@ Resources:`;for(let t of c){if(!t||typeof t!=`string`)throw Error(`@supabase/aut
   .uc-reveal-role.uc-role-spy{color:var(--danger);font-weight:700;}
   .uc-reveal-word{font-size:12.5px;color:var(--ink-soft);margin-left:auto;}
 
+  /* ---- 康神开剥了 ---- */
+  .react-box{max-width:420px;margin:0 auto;height:230px;border-radius:16px;background:var(--card);border:1px solid var(--line);display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;user-select:none;transition:background .12s;}
+  .react-box.waiting{background:#B4553F;border-color:#B4553F;}
+  .react-box.ready{background:#4C7A5E;border-color:#4C7A5E;}
+  .react-box.tooearly{background:#8B2E1F;border-color:#8B2E1F;}
+  .react-box.result{background:var(--leaf-light);border-color:var(--leaf);}
+  .react-main{font-family:'Noto Serif SC',serif;font-weight:900;font-size:30px;color:var(--ink);}
+  .react-sub{font-size:13px;color:var(--ink-soft);margin-top:8px;}
+  .react-box.waiting .react-main,.react-box.waiting .react-sub,
+  .react-box.ready .react-main,.react-box.ready .react-sub,
+  .react-box.tooearly .react-main,.react-box.tooearly .react-sub{color:#fff;}
+  .react-rounds{display:grid;grid-template-columns:repeat(5,1fr);gap:8px;max-width:420px;margin:14px auto 0;}
+  .react-round{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:8px 4px;text-align:center;}
+  .react-round.done{border-color:var(--leaf);background:var(--leaf-light);}
+  .react-round-no{font-size:10.5px;color:var(--ink-soft);}
+  .react-round-ms{font-family:'Space Grotesk',sans-serif;font-weight:700;font-size:13px;margin-top:2px;}
+
   .stack-stage{position:relative;max-width:420px;margin:0 auto;border-radius:14px;overflow:hidden;border:1px solid var(--line);touch-action:none;}
   #stackCanvas{width:100%;height:auto;display:block;touch-action:none;}
 
@@ -702,6 +719,7 @@ let state = {
   gear: [],               // 器材清单：[{id,name,category,status,owner,note,ts}]
   birdScores: {},         // 中国鸟能飞：每个人的最高分 { personId: {score, charIdx, ts} }
   stackScores: {},        // 皮鼓爹跌叠：每个人的最高层数 { personId: {score, ts} }
+  reactScores: {},        // 康神开剥了：每个人的最快反应（毫秒，越小越好）{ personId: {ms, ts} }
   funGame: null,          // 娱乐吧当前打开的小游戏：null | 'undercover' | 'shooter'
   undercoverGame: null,   // 谁是卧底：共享的当前对局数据（见 getUndercoverGame）
   shooterGame: null,      // 实时对战：共享的当前对局数据（见 getShooterGame）
@@ -969,6 +987,7 @@ function applyRemoteData(data){
   state.gear = data.gear || [];
   state.birdScores = data.birdScores || {};
   state.stackScores = data.stackScores || {};
+  state.reactScores = data.reactScores || {};
 }
 
 function startRealtimeSync(){
@@ -1017,7 +1036,7 @@ async function loadAll(){
     return;
   }
   if(!data){
-    data = { members: PRESET_MEMBERS, checkins: {}, meetings: [], posts: [], profiles: {}, guests: [], credentials: {}, messages: [], boards: {}, bandBanner: null, notifications: [], announcement: '', nameProposals: [], freezeTokens: {}, frozenDays: {}, freezeAwardMark: {}, teambuilds: [], dayMemories: {}, undercoverGame: null, shooterGame: null, praises: [], ledger: [], gigs: [], songs: DEFAULT_SONGS, roles: DEFAULT_ROLES, gear: [], birdScores: {}, stackScores: {} };
+    data = { members: PRESET_MEMBERS, checkins: {}, meetings: [], posts: [], profiles: {}, guests: [], credentials: {}, messages: [], boards: {}, bandBanner: null, notifications: [], announcement: '', nameProposals: [], freezeTokens: {}, frozenDays: {}, freezeAwardMark: {}, teambuilds: [], dayMemories: {}, undercoverGame: null, shooterGame: null, praises: [], ledger: [], gigs: [], songs: DEFAULT_SONGS, roles: DEFAULT_ROLES, gear: [], birdScores: {}, stackScores: {}, reactScores: {} };
     try{ await remoteSet(data); }
     catch(e2){
       renderErrorScreen('初始化云端数据失败：' + e2.message);
@@ -1052,6 +1071,7 @@ async function loadAll(){
   state.gear = data.gear || [];
   state.birdScores = data.birdScores || {};
   state.stackScores = data.stackScores || {};
+  state.reactScores = data.reactScores || {};
   state.identity = loadIdentity();
   startRealtimeSync();
   renderRoot();
@@ -1089,6 +1109,7 @@ async function pullLatest(){
       state.gear = data.gear || [];
       state.birdScores = data.birdScores || {};
       state.stackScores = data.stackScores || {};
+      state.reactScores = data.reactScores || {};
     }
   }catch(e){ /* 拉取失败就先用本地已有数据 */ }
 }
@@ -1132,7 +1153,8 @@ async function saveAll(){
       roles: state.roles,
       gear: state.gear,
       birdScores: state.birdScores,
-      stackScores: state.stackScores
+      stackScores: state.stackScores,
+      reactScores: state.reactScores
     }), 15000, '保存');
   }catch(e){
     console.error('保存失败', e);
@@ -1767,6 +1789,7 @@ function renderFunTab(target){
   if(state.funGame === 'shooter'){ renderShooterGame(target); return; }
   if(state.funGame === 'bird'){ renderBirdGame(target); return; }
   if(state.funGame === 'stack'){ renderStackGame(target); return; }
+  if(state.funGame === 'react'){ renderReactGame(target); return; }
   target.innerHTML = `
     <div class="section-head"><h2>🎮 娱乐吧</h2></div>
     <p class="sub" style="margin-bottom:14px;">团建、团综的时候一起玩，以后会陆续加更多小游戏。</p>
@@ -1791,12 +1814,18 @@ function renderFunTab(target){
         <div class="game-name">皮鼓爹跌叠</div>
         <div class="game-desc">点一下放下，看谁叠得最高</div>
       </div>
+      <div class="game-card" id="gameReact">
+        <div class="game-icon">⚡</div>
+        <div class="game-name">康神开剥了？</div>
+        <div class="game-desc">变色就点，比谁手最快</div>
+      </div>
     </div>
   `;
   document.getElementById('gameUndercover').onclick = ()=>{ state.funGame = 'undercover'; renderFunTab(target); };
   document.getElementById('gameShooter').onclick = ()=>{ state.funGame = 'shooter'; renderFunTab(target); };
   document.getElementById('gameBird').onclick = ()=>{ state.funGame = 'bird'; renderFunTab(target); };
   document.getElementById('gameStack').onclick = ()=>{ state.funGame = 'stack'; renderFunTab(target); };
+  document.getElementById('gameReact').onclick = ()=>{ state.funGame = 'react'; renderFunTab(target); };
 }
 
 function getUndercoverGame(){
@@ -1997,6 +2026,120 @@ function renderUndercoverEnded(target, game){
     await queueSave();
     renderUndercoverGame(target);
   };
+}
+
+/* ================= 康神开剥了？：反应速度测试，五轮取平均 ================= */
+let reactTimer = null;
+
+function renderReactGame(target){
+  const scores = state.reactScores || {};
+  const ranking = allPeople()
+    .map(p=>({ ...p, ms:(scores[p.id]&&scores[p.id].ms)||0 }))
+    .filter(p=>p.ms>0)
+    .sort((a,b)=>a.ms-b.ms);   // 越小越快，升序
+  const myBest = (scores[state.identity] && scores[state.identity].ms) || 0;
+
+  const ROUNDS = 5;
+  let phase = 'idle';   // idle | waiting | ready | tooearly | result
+  let round = 0, times = [], startAt = 0;
+
+  target.innerHTML = `
+    <button class="back-link" id="backToGames">← 返回娱乐吧</button>
+    <div class="section-head"><h2>⚡ 康神开剥了？</h2></div>
+    <p class="sub" style="margin-bottom:12px;">屏幕变绿的一瞬间点它，比谁手最快。一共 ${ROUNDS} 轮，取平均成绩记录到排行榜。红色的时候别手贱——抢跑那轮要重来。</p>
+    <div class="react-box" id="reactBox">
+      <div class="react-main" id="reactMain">点这里开始</div>
+      <div class="react-sub" id="reactSub">准备好了就点</div>
+    </div>
+    <div class="react-rounds" id="reactRounds"></div>
+    <div class="section-head" style="margin-top:24px;"><h2>🏆 反应排行榜</h2></div>
+    ${myBest? `<div class="banner">你的最快平均是 ${myBest} 毫秒${ranking.length&&String(ranking[0].id)===String(state.identity)? '，目前最快 👑':''}</div>`:''}
+    <div class="bird-rank">
+      ${ranking.length? ranking.map((p,i)=>`
+        <div class="bird-rank-row ${String(p.id)===String(state.identity)?'me':''}">
+          <div class="bird-rank-no ${i<3?'top':''}">${['🥇','🥈','🥉'][i] || (i+1)}</div>
+          <div class="bird-rank-name">${escapeHtml(p.name)}</div>
+          <div class="bird-rank-score">${p.ms} ms</div>
+        </div>`).join('') : '<div class="empty-hint">还没有人测过，来当第一个</div>'}
+    </div>
+  `;
+  document.getElementById('backToGames').onclick = ()=>{ stopReactTimer(); state.funGame = null; renderFunTab(target); };
+
+  const box = document.getElementById('reactBox');
+  const main = document.getElementById('reactMain');
+  const sub = document.getElementById('reactSub');
+  const roundsBox = document.getElementById('reactRounds');
+
+  function paintRounds(){
+    roundsBox.innerHTML = Array.from({length:ROUNDS}, (_,i)=>`
+      <div class="react-round ${times[i]!==undefined?'done':''}">
+        <div class="react-round-no">第${i+1}轮</div>
+        <div class="react-round-ms">${times[i]!==undefined? times[i]+' ms' : '—'}</div>
+      </div>`).join('');
+  }
+  paintRounds();
+
+  function nextRound(){
+    phase = 'waiting';
+    box.className = 'react-box waiting';
+    main.textContent = '等待…';
+    sub.textContent = '变绿了再点！';
+    const delay = 1200 + Math.random()*2800; // 1.2~4秒随机，防止靠节奏预判
+    reactTimer = setTimeout(()=>{
+      phase = 'ready';
+      startAt = performance.now();
+      box.className = 'react-box ready';
+      main.textContent = '点！';
+      sub.textContent = '';
+    }, delay);
+  }
+
+  async function finish(){
+    const avg = Math.round(times.reduce((a,b)=>a+b,0) / times.length);
+    phase = 'result';
+    box.className = 'react-box result';
+    const prev = (state.reactScores[state.identity] && state.reactScores[state.identity].ms) || 0;
+    const isNewBest = !prev || avg < prev;   // 越小越好
+    if(isNewBest){
+      state.reactScores[state.identity] = { ms: avg, ts: Date.now() };
+      queueSave();
+    }
+    main.textContent = `平均 ${avg} ms`;
+    sub.textContent = isNewBest? '新纪录！点一下再测一次' : `你的最快是 ${prev} ms · 点一下再来`;
+  }
+
+  box.onclick = ()=>{
+    if(phase === 'idle' || phase === 'result' || phase === 'tooearly'){
+      round = 0; times = []; paintRounds();
+      nextRound();
+      return;
+    }
+    if(phase === 'waiting'){          // 抢跑
+      stopReactTimer();
+      phase = 'tooearly';
+      box.className = 'react-box tooearly';
+      main.textContent = '抢跑了！';
+      sub.textContent = '点一下重新开始这一轮';
+      return;
+    }
+    if(phase === 'ready'){
+      const ms = Math.round(performance.now() - startAt);
+      times.push(ms);
+      round++;
+      paintRounds();
+      if(round >= ROUNDS){ finish(); }
+      else{
+        box.className = 'react-box';
+        main.textContent = `${ms} ms`;
+        sub.textContent = `还有 ${ROUNDS-round} 轮，马上继续…`;
+        reactTimer = setTimeout(nextRound, 900);
+      }
+    }
+  };
+}
+
+function stopReactTimer(){
+  if(reactTimer){ clearTimeout(reactTimer); reactTimer = null; }
 }
 
 /* ================= 皮鼓爹跌叠：叠罗汉，点一下放下，看谁叠得高 ================= */
