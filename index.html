@@ -373,6 +373,23 @@ Resources:`;for(let t of c){if(!t||typeof t!=`string`)throw Error(`@supabase/aut
   .uc-reveal-role.uc-role-spy{color:var(--danger);font-weight:700;}
   .uc-reveal-word{font-size:12.5px;color:var(--ink-soft);margin-left:auto;}
 
+  /* ---- 皮菇2048 ---- */
+  .merge-chain{display:flex;align-items:center;gap:4px;flex-wrap:wrap;background:var(--card);border:1px solid var(--line);border-radius:12px;padding:10px 12px;margin-bottom:12px;font-size:11.5px;}
+  .merge-chain-item{display:flex;align-items:center;gap:4px;}
+  .merge-chain-avatar{width:22px;height:22px;border-radius:50%;overflow:hidden;display:inline-flex;align-items:center;justify-content:center;flex:0 0 auto;}
+  .merge-chain-avatar img{width:100%;height:100%;object-fit:contain;}
+  .merge-chain-arrow{color:var(--ink-soft);margin:0 2px;}
+  .merge-head{display:flex;align-items:center;gap:12px;max-width:420px;margin:0 auto 12px;}
+  .merge-score{background:var(--card);border:1px solid var(--line);border-radius:10px;padding:6px 14px;text-align:center;flex:1;}
+  .merge-score span{display:block;font-size:10.5px;color:var(--ink-soft);}
+  .merge-score b{font-family:'Space Grotesk',sans-serif;font-size:18px;color:var(--leaf);}
+  .merge-stage{position:relative;max-width:420px;margin:0 auto;touch-action:none;}
+  .merge-grid{display:grid;grid-template-columns:repeat(4,1fr);gap:8px;background:var(--line);padding:8px;border-radius:14px;}
+  .merge-cell{aspect-ratio:1;border-radius:10px;display:flex;flex-direction:column;align-items:center;justify-content:center;overflow:hidden;position:relative;}
+  .merge-cell.empty{background:rgba(255,255,255,.45);}
+  .merge-cell img{width:64%;height:64%;object-fit:contain;}
+  .merge-cell-name{font-size:9.5px;color:#fff;font-weight:700;text-shadow:0 1px 2px rgba(0,0,0,.35);margin-top:1px;}
+
   /* ---- 康神开剥了 ---- */
   .react-box{max-width:420px;margin:0 auto;height:230px;border-radius:16px;background:var(--card);border:1px solid var(--line);display:flex;flex-direction:column;align-items:center;justify-content:center;cursor:pointer;user-select:none;transition:background .12s;}
   .react-box.waiting{background:#B4553F;border-color:#B4553F;}
@@ -720,6 +737,7 @@ let state = {
   birdScores: {},         // 中国鸟能飞：每个人的最高分 { personId: {score, charIdx, ts} }
   stackScores: {},        // 皮鼓爹跌叠：每个人的最高层数 { personId: {score, ts} }
   reactScores: {},        // 康神开剥了：每个人的最快反应（毫秒，越小越好）{ personId: {ms, ts} }
+  mergeScores: {},        // 皮菇2048：每个人的最高分 { personId: {score, maxTier, ts} }
   funGame: null,          // 娱乐吧当前打开的小游戏：null | 'undercover' | 'shooter'
   undercoverGame: null,   // 谁是卧底：共享的当前对局数据（见 getUndercoverGame）
   shooterGame: null,      // 实时对战：共享的当前对局数据（见 getShooterGame）
@@ -988,6 +1006,7 @@ function applyRemoteData(data){
   state.birdScores = data.birdScores || {};
   state.stackScores = data.stackScores || {};
   state.reactScores = data.reactScores || {};
+  state.mergeScores = data.mergeScores || {};
 }
 
 function startRealtimeSync(){
@@ -1036,7 +1055,7 @@ async function loadAll(){
     return;
   }
   if(!data){
-    data = { members: PRESET_MEMBERS, checkins: {}, meetings: [], posts: [], profiles: {}, guests: [], credentials: {}, messages: [], boards: {}, bandBanner: null, notifications: [], announcement: '', nameProposals: [], freezeTokens: {}, frozenDays: {}, freezeAwardMark: {}, teambuilds: [], dayMemories: {}, undercoverGame: null, shooterGame: null, praises: [], ledger: [], gigs: [], songs: DEFAULT_SONGS, roles: DEFAULT_ROLES, gear: [], birdScores: {}, stackScores: {}, reactScores: {} };
+    data = { members: PRESET_MEMBERS, checkins: {}, meetings: [], posts: [], profiles: {}, guests: [], credentials: {}, messages: [], boards: {}, bandBanner: null, notifications: [], announcement: '', nameProposals: [], freezeTokens: {}, frozenDays: {}, freezeAwardMark: {}, teambuilds: [], dayMemories: {}, undercoverGame: null, shooterGame: null, praises: [], ledger: [], gigs: [], songs: DEFAULT_SONGS, roles: DEFAULT_ROLES, gear: [], birdScores: {}, stackScores: {}, reactScores: {}, mergeScores: {} };
     try{ await remoteSet(data); }
     catch(e2){
       renderErrorScreen('初始化云端数据失败：' + e2.message);
@@ -1072,6 +1091,7 @@ async function loadAll(){
   state.birdScores = data.birdScores || {};
   state.stackScores = data.stackScores || {};
   state.reactScores = data.reactScores || {};
+  state.mergeScores = data.mergeScores || {};
   state.identity = loadIdentity();
   startRealtimeSync();
   renderRoot();
@@ -1110,6 +1130,7 @@ async function pullLatest(){
       state.birdScores = data.birdScores || {};
       state.stackScores = data.stackScores || {};
       state.reactScores = data.reactScores || {};
+      state.mergeScores = data.mergeScores || {};
     }
   }catch(e){ /* 拉取失败就先用本地已有数据 */ }
 }
@@ -1154,7 +1175,8 @@ async function saveAll(){
       gear: state.gear,
       birdScores: state.birdScores,
       stackScores: state.stackScores,
-      reactScores: state.reactScores
+      reactScores: state.reactScores,
+      mergeScores: state.mergeScores
     }), 15000, '保存');
   }catch(e){
     console.error('保存失败', e);
@@ -1790,6 +1812,7 @@ function renderFunTab(target){
   if(state.funGame === 'bird'){ renderBirdGame(target); return; }
   if(state.funGame === 'stack'){ renderStackGame(target); return; }
   if(state.funGame === 'react'){ renderReactGame(target); return; }
+  if(state.funGame === 'merge'){ renderMergeGame(target); return; }
   target.innerHTML = `
     <div class="section-head"><h2>🎮 娱乐吧</h2></div>
     <p class="sub" style="margin-bottom:14px;">团建、团综的时候一起玩，以后会陆续加更多小游戏。</p>
@@ -1819,6 +1842,11 @@ function renderFunTab(target){
         <div class="game-name">康神开剥了？</div>
         <div class="game-desc">变色就点，比谁手最快</div>
       </div>
+      <div class="game-card" id="gameMerge">
+        <div class="game-icon">🧩</div>
+        <div class="game-name">皮菇2048</div>
+        <div class="game-desc">滑动合并，从小鱼一路合到杉菜</div>
+      </div>
     </div>
   `;
   document.getElementById('gameUndercover').onclick = ()=>{ state.funGame = 'undercover'; renderFunTab(target); };
@@ -1826,6 +1854,7 @@ function renderFunTab(target){
   document.getElementById('gameBird').onclick = ()=>{ state.funGame = 'bird'; renderFunTab(target); };
   document.getElementById('gameStack').onclick = ()=>{ state.funGame = 'stack'; renderFunTab(target); };
   document.getElementById('gameReact').onclick = ()=>{ state.funGame = 'react'; renderFunTab(target); };
+  document.getElementById('gameMerge').onclick = ()=>{ state.funGame = 'merge'; renderFunTab(target); };
 }
 
 function getUndercoverGame(){
@@ -2026,6 +2055,207 @@ function renderUndercoverEnded(target, game){
     await queueSave();
     renderUndercoverGame(target);
   };
+}
+
+/* ================= 皮菇2048：合并六位成员，按年龄从小到大进化 ================= */
+/* 合成链（成员在 PRESET_MEMBERS 里的下标）：
+   小鱼(1) → 严格上帝(5) → 坤坤(0) → 柜子羊(4) → 包菜(3) → 杉菜(2)
+   合出杉菜就算通关 */
+const MERGE_CHAIN = [1, 5, 0, 4, 3, 2];
+let mergeKeyHandler = null;
+
+function renderMergeGame(target){
+  const scores = state.mergeScores || {};
+  const ranking = allPeople()
+    .map(p=>({ ...p, score:(scores[p.id]&&scores[p.id].score)||0, maxTier:(scores[p.id]&&scores[p.id].maxTier)||0 }))
+    .filter(p=>p.score>0)
+    .sort((a,b)=>b.score-a.score);
+  const myBest = (scores[state.identity] && scores[state.identity].score) || 0;
+  const nameOf = (tier)=> ((state.members||[])[MERGE_CHAIN[tier]]||{}).name || '?';
+
+  let grid, score, best, over, won;
+
+  target.innerHTML = `
+    <button class="back-link" id="backToGames">← 返回娱乐吧</button>
+    <div class="section-head"><h2>🧩 皮菇2048</h2></div>
+    <p class="sub" style="margin-bottom:10px;">滑动（手机）或按方向键（电脑）让所有块靠拢，两个相同的人撞在一起就会按年龄"长大"一岁。合出杉菜就通关。</p>
+    <div class="merge-chain">
+      ${MERGE_CHAIN.map((mi,ti)=>`
+        <span class="merge-chain-item">
+          <span class="merge-chain-avatar" style="background:${getPersonColor(mi)}">${CHARACTER_AVATARS[mi]? `<img src="${CHARACTER_AVATARS[mi]}">` : ''}</span>
+          <span>${escapeHtml(((state.members||[])[mi]||{}).name||'')}</span>
+        </span>${ti<MERGE_CHAIN.length-1? '<span class="merge-chain-arrow">→</span>':''}`).join('')}
+    </div>
+    <div class="merge-head">
+      <div class="merge-score"><span>当前</span><b id="mergeScore">0</b></div>
+      <div class="merge-score"><span>最高</span><b id="mergeBest">${myBest}</b></div>
+      <button class="btn btn-ghost" id="mergeRestart" style="width:auto;padding:7px 16px;">重新开始</button>
+    </div>
+    <div class="merge-stage">
+      <div class="merge-grid" id="mergeGrid"></div>
+      <div class="bird-overlay" id="mergeOverlay">
+        <div class="bird-overlay-inner">
+          <div class="bird-overlay-title" id="mergeOverlayTitle"></div>
+          <div class="bird-overlay-sub" id="mergeOverlaySub"></div>
+        </div>
+      </div>
+    </div>
+    <div class="section-head" style="margin-top:24px;"><h2>🏆 积分排行榜</h2></div>
+    <div class="bird-rank">
+      ${ranking.length? ranking.map((p,i)=>`
+        <div class="bird-rank-row ${String(p.id)===String(state.identity)?'me':''}">
+          <div class="bird-rank-no ${i<3?'top':''}">${['🥇','🥈','🥉'][i] || (i+1)}</div>
+          <div class="bird-rank-name">${escapeHtml(p.name)}<small style="display:block;font-size:11px;color:var(--ink-soft);font-weight:400;">最高合到 ${escapeHtml(nameOf(p.maxTier))}</small></div>
+          <div class="bird-rank-score">${p.score}</div>
+        </div>`).join('') : '<div class="empty-hint">还没有人玩过，来当第一个</div>'}
+    </div>
+  `;
+  document.getElementById('backToGames').onclick = ()=>{ stopMergeKeys(); state.funGame = null; renderFunTab(target); };
+
+  const gridBox = document.getElementById('mergeGrid');
+  const overlay = document.getElementById('mergeOverlay');
+  const stage = gridBox.parentElement;
+
+  function reset(){
+    grid = Array.from({length:4}, ()=>Array(4).fill(0)); // 0=空，1..6 表示第几阶
+    score = 0; over = false; won = false;
+    best = (state.mergeScores && state.mergeScores[state.identity] && state.mergeScores[state.identity].score) || 0;
+    addTile(); addTile();
+    overlay.classList.remove('show');
+    paint();
+  }
+
+  function addTile(){
+    const empty = [];
+    for(let r=0;r<4;r++) for(let col=0;col<4;col++) if(!grid[r][col]) empty.push([r,col]);
+    if(!empty.length) return;
+    const [r,col] = empty[Math.floor(Math.random()*empty.length)];
+    grid[r][col] = Math.random()<0.9 ? 1 : 2;  // 九成出第一阶
+  }
+
+  function paint(){
+    let html = '';
+    for(let r=0;r<4;r++){
+      for(let col=0;col<4;col++){
+        const t = grid[r][col];
+        if(!t){ html += `<div class="merge-cell empty"></div>`; continue; }
+        const mi = MERGE_CHAIN[t-1];
+        const nm = ((state.members||[])[mi]||{}).name || '';
+        html += `<div class="merge-cell tier${t}" style="background:${getPersonColor(mi)}">
+          ${CHARACTER_AVATARS[mi]? `<img src="${CHARACTER_AVATARS[mi]}">` : ''}
+          <span class="merge-cell-name">${escapeHtml(nm)}</span>
+        </div>`;
+      }
+    }
+    gridBox.innerHTML = html;
+    document.getElementById('mergeScore').textContent = score;
+    document.getElementById('mergeBest').textContent = Math.max(best, score);
+  }
+
+  function slide(line){
+    // 先挤掉空位，再合并相邻相同的，再挤一次
+    let arr = line.filter(v=>v);
+    let gained = 0, maxT = 0;
+    for(let i=0;i<arr.length-1;i++){
+      if(arr[i] && arr[i]===arr[i+1] && arr[i] < MERGE_CHAIN.length){
+        arr[i]++; arr[i+1] = 0;
+        gained += arr[i]*10;
+        if(arr[i] > maxT) maxT = arr[i];
+        i++;
+      }
+    }
+    arr = arr.filter(v=>v);
+    while(arr.length<4) arr.push(0);
+    return { arr, gained, maxT };
+  }
+
+  function move(dir){
+    if(over) return;
+    const before = JSON.stringify(grid);
+    let gainedAll = 0, maxTier = 0;
+    for(let i=0;i<4;i++){
+      let line;
+      if(dir==='left')  line = grid[i].slice();
+      if(dir==='right') line = grid[i].slice().reverse();
+      if(dir==='up')    line = [grid[0][i],grid[1][i],grid[2][i],grid[3][i]];
+      if(dir==='down')  line = [grid[3][i],grid[2][i],grid[1][i],grid[0][i]];
+      const { arr, gained, maxT } = slide(line);
+      gainedAll += gained;
+      if(maxT>maxTier) maxTier = maxT;
+      if(dir==='left')  grid[i] = arr;
+      if(dir==='right') grid[i] = arr.reverse();
+      if(dir==='up')    for(let r=0;r<4;r++) grid[r][i] = arr[r];
+      if(dir==='down')  for(let r=0;r<4;r++) grid[3-r][i] = arr[r];
+    }
+    if(JSON.stringify(grid) === before) return; // 没动就不算一步
+    score += gainedAll;
+    addTile();
+    paint();
+    if(maxTier >= MERGE_CHAIN.length && !won){ won = true; finish(true); return; }
+    if(!canMove()) finish(false);
+  }
+
+  function canMove(){
+    for(let r=0;r<4;r++) for(let col=0;col<4;col++){
+      if(!grid[r][col]) return true;
+      if(col<3 && grid[r][col]===grid[r][col+1]) return true;
+      if(r<3 && grid[r][col]===grid[r+1][col]) return true;
+    }
+    return false;
+  }
+
+  function highestTier(){
+    let m = 0;
+    for(let r=0;r<4;r++) for(let col=0;col<4;col++) if(grid[r][col]>m) m = grid[r][col];
+    return m;
+  }
+
+  function finish(isWin){
+    over = !isWin ? true : over;   // 通关后还能继续玩
+    const prev = (state.mergeScores[state.identity] && state.mergeScores[state.identity].score) || 0;
+    const tier = highestTier();
+    if(score > prev){
+      state.mergeScores[state.identity] = { score, maxTier: Math.max(1,tier)-1, ts: Date.now() };
+      queueSave();
+    }
+    document.getElementById('mergeOverlayTitle').textContent = isWin
+      ? `合出杉菜了！${score} 分 🎉`
+      : `结束了 · ${score} 分`;
+    document.getElementById('mergeOverlaySub').textContent = isWin
+      ? '点一下继续玩，看能刷多高'
+      : `最高合到 ${nameOf(Math.max(1,tier)-1)} · 点一下再来一局`;
+    overlay.classList.add('show');
+  }
+
+  overlay.onclick = ()=>{
+    if(over || won){ reset(); won = false; }
+    else overlay.classList.remove('show');
+  };
+  document.getElementById('mergeRestart').onclick = ()=> reset();
+
+  // 键盘
+  mergeKeyHandler = (ev)=>{
+    const map = { ArrowLeft:'left', ArrowRight:'right', ArrowUp:'up', ArrowDown:'down',
+                  a:'left', d:'right', w:'up', s:'down' };
+    const dir = map[ev.key];
+    if(dir){ ev.preventDefault(); move(dir); }
+  };
+  window.addEventListener('keydown', mergeKeyHandler);
+
+  // 触屏滑动
+  let sx=0, sy=0;
+  stage.addEventListener('touchstart', ev=>{ sx=ev.touches[0].clientX; sy=ev.touches[0].clientY; }, {passive:true});
+  stage.addEventListener('touchend', ev=>{
+    const dx = ev.changedTouches[0].clientX - sx, dy = ev.changedTouches[0].clientY - sy;
+    if(Math.max(Math.abs(dx),Math.abs(dy)) < 24) return;
+    move(Math.abs(dx)>Math.abs(dy) ? (dx>0?'right':'left') : (dy>0?'down':'up'));
+  }, {passive:true});
+
+  reset();
+}
+
+function stopMergeKeys(){
+  if(mergeKeyHandler){ window.removeEventListener('keydown', mergeKeyHandler); mergeKeyHandler = null; }
 }
 
 /* ================= 康神开剥了？：反应速度测试，五轮取平均 ================= */
