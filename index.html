@@ -1673,7 +1673,7 @@ function renderFeatureGuide(){
       { icon:'🔫', name:'枪战对决', desc:'横屏实时对战，六个人各有专属技能，还有毛兽boss' },
       { icon:'🐦', name:'中国鸟能飞', desc:'选个角色穿管子，路上有复活/双倍/加速丸' },
       { icon:'🏗', name:'皮鼓爹跌叠', desc:'点一下放下方块，看谁把六个人叠得最高' },
-      { icon:'⚡', name:'康神开剥了？', desc:'变绿就点，五轮取平均，比谁反应最快' },
+      { icon:'⚡', name:'康神开剥了？', desc:'变绿就点，五轮取平均，比谁反应最快。你也想要有康神一样的准度和反应吗？那就从这里开始吧！' },
       { icon:'🧩', name:'皮菇2048', desc:'滑动合并，按年龄从小鱼一路合到杉菜' }
     ]},
     { title:'个人 · 你自己的地盘', tab:'profile', items:[
@@ -2280,7 +2280,7 @@ function renderReactGame(target){
   target.innerHTML = `
     <button class="back-link" id="backToGames">← 返回娱乐吧</button>
     <div class="section-head"><h2>⚡ 康神开剥了？</h2></div>
-    <p class="sub" style="margin-bottom:12px;">屏幕变绿的一瞬间点它，比谁手最快。一共 ${ROUNDS} 轮，取平均成绩记录到排行榜。红色的时候别手贱——抢跑那轮要重来。</p>
+    <p class="sub" style="margin-bottom:12px;">屏幕变绿的一瞬间点它，比谁手最快。一共 ${ROUNDS} 轮，取平均成绩记录到排行榜。红色的时候别手贱——抢跑那轮要重来。你也想要有康神一样的准度和反应吗？那就从这里开始吧！</p>
     <div class="react-box" id="reactBox">
       <div class="react-main" id="reactMain">点这里开始</div>
       <div class="react-sub" id="reactSub">准备好了就点</div>
@@ -2426,11 +2426,13 @@ function renderStackGame(target){
 
   const BLOCK_H = 42, BASE_W = 200;
   let tower, moving, score, best, running, dead, camY, perfectFlash;
+  let stackLastTs = 0;   // 同样按真实时间推进，避免高刷屏上方块跑得飞快
 
   function reset(){
     tower = [{ x:(STACK_W-BASE_W)/2, w:BASE_W, idx:0 }];
     score = 0; camY = 0; perfectFlash = 0;
     running = false; dead = false;
+    stackLastTs = 0;
     best = (state.stackScores && state.stackScores[state.identity] && state.stackScores[state.identity].score) || 0;
     spawnMoving();
   }
@@ -2498,13 +2500,18 @@ function renderStackGame(target){
     ctx.stroke();
   }
 
-  function loop(){
+  function loop(ts){
     stackRAF = requestAnimationFrame(loop);
+    if(!stackLastTs) stackLastTs = ts || performance.now();
+    const nowTs = ts || performance.now();
+    let dt = (nowTs - stackLastTs) / (1000/60);
+    stackLastTs = nowTs;
+    if(dt > 3) dt = 3;
     ctx.fillStyle = '#DCE9F5'; ctx.fillRect(0,0,STACK_W,STACK_H);
     ctx.fillStyle = '#C4D6C6'; ctx.fillRect(0,STACK_H-40,STACK_W,40);
 
     if(running && !dead){
-      moving.x += moving.dir * moving.speed;
+      moving.x += moving.dir * moving.speed * dt;
       if(moving.x <= 0){ moving.x = 0; moving.dir = 1; }
       if(moving.x + moving.w >= STACK_W){ moving.x = STACK_W - moving.w; moving.dir = -1; }
     }
@@ -2641,6 +2648,10 @@ function renderBirdPlay(target){
   };
   let bird, pipes, orbs, score, best, running, dead, started, frame;
   let revives, doubleUntil, dashUntil;
+  /* 用真实时间推进，而不是"每帧固定移动多少"。
+     安卓很多是90/120Hz高刷屏，iPhone多是60Hz，按帧算的话高刷屏会快一倍。
+     这里以60帧为基准换算成倍率，各种屏幕上速度就一致了。 */
+  let lastFrameTs = 0, pipeTimer = 0;
 
   function reset(){
     bird = { x:110, y:BIRD_H/2, vy:0, r:22 };
@@ -2648,6 +2659,7 @@ function renderBirdPlay(target){
     score = 0; frame = 0;
     running = false; dead = false; started = false;
     revives = 0; doubleUntil = 0; dashUntil = 0;
+    lastFrameTs = 0; pipeTimer = 0;
     best = (state.birdScores && state.birdScores[state.identity] && state.birdScores[state.identity].score) || 0;
   }
   reset();
@@ -2698,17 +2710,24 @@ function renderBirdPlay(target){
     overlay.classList.add('show');
   }
 
-  function loop(){
+  function loop(ts){
     birdRAF = requestAnimationFrame(loop);
+    // dt = 相对于60帧的倍率；60Hz时约等于1，120Hz时约等于0.5
+    if(!lastFrameTs) lastFrameTs = ts || performance.now();
+    const nowTs = ts || performance.now();
+    let dt = (nowTs - lastFrameTs) / (1000/60);
+    lastFrameTs = nowTs;
+    if(dt > 3) dt = 3;   // 切后台回来时别让它一下跳太远
     // 背景
     ctx.fillStyle = '#DCE9F5'; ctx.fillRect(0,0,BIRD_W,BIRD_H);
     ctx.fillStyle = '#C4D6C6'; ctx.fillRect(0,BIRD_H-52,BIRD_W,52);
 
     if(running){
       frame++;
-      bird.vy += GRAV; bird.y += bird.vy;
-      const curSpeed = hasDash() ? SPEED*2.4 : SPEED;   // 加速丸：整体推进变快
-      if(frame % 92 === 0) spawnPipe();
+      bird.vy += GRAV * dt; bird.y += bird.vy * dt;
+      const curSpeed = (hasDash() ? SPEED*2.4 : SPEED) * dt;   // 加速丸：整体推进变快
+      pipeTimer += dt;
+      if(pipeTimer >= 92){ pipeTimer -= 92; spawnPipe(); }
       pipes.forEach(p=>{ p.x -= curSpeed; });
       orbs.forEach(o=>{ o.x -= curSpeed; });
       pipes = pipes.filter(p=> p.x + PIPE_W > -10);
@@ -3276,10 +3295,16 @@ function renderShooterPlaying(target, game){
 
   let lastBroadcast = 0;
   let endedTriggered = false;
+  let shooterLastTs = 0;   // 同上，按真实时间推进，保证不同刷新率手感一致
 
-  function loop(){
+  function loop(ts){
     shooterRAF = requestAnimationFrame(loop);
     const now = Date.now();
+    if(!shooterLastTs) shooterLastTs = ts || performance.now();
+    const nowTs = ts || performance.now();
+    let dt = (nowTs - shooterLastTs) / (1000/60);
+    shooterLastTs = nowTs;
+    if(dt > 3) dt = 3;
     const charmed = shooterMe && now < shooterMe.charmedUntil;
     const buffed = shooterMe && now < shooterMe.buffUntil;
 
@@ -3291,7 +3316,7 @@ function renderShooterPlaying(target, game){
       }
       if(shooterMe.alive && !charmed && (joyDX||joyDY)){
         const speed = buffed ? 5.2 : 3.2; // 坤坤技能：加移速
-        let nx = shooterMe.x + joyDX*speed, ny = shooterMe.y + joyDY*speed;
+        let nx = shooterMe.x + joyDX*speed*dt, ny = shooterMe.y + joyDY*speed*dt;
         nx = Math.max(16, Math.min(SHOOTER_W-16, nx));
         ny = Math.max(16, Math.min(SHOOTER_H-16, ny));
         const blocked = game.obstacles.some(o=> nx>o.x-16 && nx<o.x+o.w+16 && ny>o.y-16 && ny<o.y+o.h+16);
@@ -3345,7 +3370,7 @@ function renderShooterPlaying(target, game){
         if(nearest && nearestD < 420){
           const tx = nearest.renderX??nearest.x, ty = nearest.renderY??nearest.y;
           bot.angle = Math.atan2(ty-bot.y, tx-bot.x);
-          if(nearestD > 60){ bot.x += Math.cos(bot.angle)*2; bot.y += Math.sin(bot.angle)*2; }
+          if(nearestD > 60){ bot.x += Math.cos(bot.angle)*2*dt; bot.y += Math.sin(bot.angle)*2*dt; }
           if(now-bot.lastFire > 700){
             bot.lastFire = now;
             const bb = { x:bot.x, y:bot.y, angle:bot.angle, ownerId:bot.id, remote:false, life:60, dmg:1 };
@@ -3375,7 +3400,7 @@ function renderShooterPlaying(target, game){
     // 子弹运动 + 命中判定（子弹主人自己判定命中——包括自己召唤的分身打出的子弹）
     for(let i=shooterBullets.length-1;i>=0;i--){
       const b = shooterBullets[i];
-      b.x += Math.cos(b.angle)*8; b.y += Math.sin(b.angle)*8; b.life--;
+      b.x += Math.cos(b.angle)*8*dt; b.y += Math.sin(b.angle)*8*dt; b.life -= dt;
       const outOfBounds = b.x<0||b.x>SHOOTER_W||b.y<0||b.y>SHOOTER_H;
       const hitObstacle = game.obstacles.some(o=> b.x>o.x && b.x<o.x+o.w && b.y>o.y && b.y<o.y+o.h);
       if(outOfBounds || hitObstacle || b.life<=0){ shooterBullets.splice(i,1); continue; }
