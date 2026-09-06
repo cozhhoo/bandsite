@@ -3300,7 +3300,7 @@ function renderJumpCharSelect(target){
   target.innerHTML = `
     <button class="back-link" id="backToGamesJump">← 返回娱乐吧</button>
     <div class="section-head"><h2>🥬 包菜挑战杯</h2></div>
-    <p class="sub" style="margin-bottom:10px;">按住屏幕蓄力，松手起跳，跳到下一个垫子上。跳到正中心有加分，跳空了就直接掉下去，垫子会越来越小、越来越远。</p>
+    <p class="sub" style="margin-bottom:10px;">听说包菜同学是跳一跳的大魔王，你不服气吗？那就尽管来挑战他吧！</p>
 
     <div class="bird-select-title">选一个角色</div>
     <div class="bird-char-grid" id="jumpCharGrid">
@@ -3419,11 +3419,13 @@ function renderJumpPlay(target){
   }
 
   function landCheck(){
-    const D = jumpFrom._targetDist;
-    const diff = Math.abs(jumpDist - D);
-    const r = next.r;
-    if(diff <= r){
-      const perfect = diff <= r*0.32;
+    // 垫子画出来是压扁的椭圆（竖直方向只有 0.62 倍），落点判定要按椭圆算，
+    // 不然沿着接近竖直方向跳的时候，明明已经超出垫子一截，也会被判成功
+    const rx = next.r, ry = next.r*0.62;
+    const nx = (jumpTo.x-next.x)/rx, ny = (jumpTo.y-next.y)/ry;
+    const distNorm = Math.hypot(nx, ny);
+    if(distNorm <= 1){
+      const perfect = distNorm <= 0.34;
       score += 1;
       if(perfect){ perfectStreak++; score += Math.min(perfectStreak,5); }
       else perfectStreak = 0;
