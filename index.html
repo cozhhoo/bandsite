@@ -450,6 +450,8 @@ Resources:`;for(let t of c){if(!t||typeof t!=`string`)throw Error(`@supabase/aut
   .run-controls{display:flex;justify-content:center;gap:8px;margin-top:10px;}
   .run-btn{flex:1;max-width:110px;padding:10px 0;border-radius:12px;border:1px solid var(--line);background:var(--card);font-size:13px;font-weight:700;text-align:center;user-select:none;}
   .run-btn:active{background:var(--leaf-light);}
+  .jump-power-wrap{position:absolute;left:14px;bottom:14px;width:14px;height:120px;background:rgba(255,255,255,.55);border-radius:8px;border:1px solid var(--line);overflow:hidden;}
+  .jump-power-fill{position:absolute;left:0;right:0;bottom:0;background:linear-gradient(180deg,#E2A33D,#B15C4A);}
 
   /* ---- 枪战对决 ---- */
   .sh-rotate-hint{display:none;align-items:center;justify-content:center;height:280px;font-size:18px;color:var(--ink-soft);text-align:center;background:var(--card);border-radius:14px;border:1px dashed var(--line);}
@@ -821,6 +823,7 @@ let state = {
   reactScores: {},        // 康神开剥了：每个人的最快反应（毫秒，越小越好）{ personId: {ms, ts} }
   mergeScores: {},        // 皮菇2048：每个人的最高分 { personId: {score, maxTier, ts} }
   runScores: {},          // 巡演大逃亡：每个人的最高分 { personId: {score, charIdx, ts} }
+  jumpScores: {},         // 包菜挑战杯：每个人的最高分 { personId: {score, charIdx, ts} }
   funGame: null,          // 娱乐吧当前打开的小游戏：null | 'undercover' | 'shooter'
   undercoverGame: null,   // 谁是卧底：共享的当前对局数据（见 getUndercoverGame）
   shooterGame: null,      // 实时对战：共享的当前对局数据（见 getShooterGame）
@@ -1091,6 +1094,7 @@ function applyRemoteData(data){
   state.reactScores = data.reactScores || {};
   state.mergeScores = data.mergeScores || {};
   state.runScores = data.runScores || {};
+  state.jumpScores = data.jumpScores || {};
 }
 
 function startRealtimeSync(){
@@ -1139,7 +1143,7 @@ async function loadAll(){
     return;
   }
   if(!data){
-    data = { members: PRESET_MEMBERS, checkins: {}, meetings: [], posts: [], profiles: {}, guests: [], credentials: {}, messages: [], boards: {}, bandBanner: null, notifications: [], announcement: '', nameProposals: [], freezeTokens: {}, frozenDays: {}, freezeAwardMark: {}, teambuilds: [], dayMemories: {}, undercoverGame: null, shooterGame: null, praises: [], ledger: [], gigs: [], songs: DEFAULT_SONGS, roles: DEFAULT_ROLES, gear: [], birdScores: {}, stackScores: {}, reactScores: {}, mergeScores: {}, runScores: {} };
+    data = { members: PRESET_MEMBERS, checkins: {}, meetings: [], posts: [], profiles: {}, guests: [], credentials: {}, messages: [], boards: {}, bandBanner: null, notifications: [], announcement: '', nameProposals: [], freezeTokens: {}, frozenDays: {}, freezeAwardMark: {}, teambuilds: [], dayMemories: {}, undercoverGame: null, shooterGame: null, praises: [], ledger: [], gigs: [], songs: DEFAULT_SONGS, roles: DEFAULT_ROLES, gear: [], birdScores: {}, stackScores: {}, reactScores: {}, mergeScores: {}, runScores: {}, jumpScores: {} };
     try{ await remoteSet(data); }
     catch(e2){
       renderErrorScreen('初始化云端数据失败：' + e2.message);
@@ -1177,6 +1181,7 @@ async function loadAll(){
   state.reactScores = data.reactScores || {};
   state.mergeScores = data.mergeScores || {};
   state.runScores = data.runScores || {};
+  state.jumpScores = data.jumpScores || {};
   state.identity = loadIdentity();
   startRealtimeSync();
   renderRoot();
@@ -1217,6 +1222,7 @@ async function pullLatest(){
       state.reactScores = data.reactScores || {};
       state.mergeScores = data.mergeScores || {};
       state.runScores = data.runScores || {};
+      state.jumpScores = data.jumpScores || {};
     }
   }catch(e){ /* 拉取失败就先用本地已有数据 */ }
 }
@@ -1263,7 +1269,8 @@ async function saveAll(){
       stackScores: state.stackScores,
       reactScores: state.reactScores,
       mergeScores: state.mergeScores,
-      runScores: state.runScores
+      runScores: state.runScores,
+      jumpScores: state.jumpScores
     }), 15000, '保存');
   }catch(e){
     console.error('保存失败', e);
@@ -1905,6 +1912,7 @@ function renderFunTab(target){
   if(state.funGame === 'react'){ renderReactGame(target); return; }
   if(state.funGame === 'merge'){ renderMergeGame(target); return; }
   if(state.funGame === 'run'){ renderRunGame(target); return; }
+  if(state.funGame === 'jump'){ renderJumpGame(target); return; }
   target.innerHTML = `
     <div class="section-head"><h2>🎮 娱乐吧</h2></div>
     <p class="sub" style="margin-bottom:14px;">团建、团综的时候一起玩，以后会陆续加更多小游戏。</p>
@@ -1944,6 +1952,11 @@ function renderFunTab(target){
         <div class="game-name">巡演大逃亡</div>
         <div class="game-desc">切车道、跳跃、下滑，躲开一路障碍</div>
       </div>
+      <div class="game-card" id="gameJump">
+        <div class="game-icon">🥬</div>
+        <div class="game-name">包菜挑战杯</div>
+        <div class="game-desc">按住蓄力，松手起跳，跳一跳看谁跳得远</div>
+      </div>
     </div>
   `;
   document.getElementById('gameUndercover').onclick = ()=>{ state.funGame = 'undercover'; renderFunTab(target); };
@@ -1953,6 +1966,7 @@ function renderFunTab(target){
   document.getElementById('gameReact').onclick = ()=>{ state.funGame = 'react'; renderFunTab(target); };
   document.getElementById('gameMerge').onclick = ()=>{ state.funGame = 'merge'; renderFunTab(target); };
   document.getElementById('gameRun').onclick = ()=>{ state.funGame = 'run'; renderFunTab(target); };
+  document.getElementById('gameJump').onclick = ()=>{ state.funGame = 'jump'; renderFunTab(target); };
 }
 
 function getUndercoverGame(){
@@ -3263,6 +3277,295 @@ function renderRunPlay(target){
 function stopRunLoop(){
   if(runRAF){ cancelAnimationFrame(runRAF); runRAF = null; }
   if(runKeyHandler){ window.removeEventListener('keydown', runKeyHandler); runKeyHandler = null; }
+}
+
+/* ================= 包菜挑战杯：跳一跳玩法 ================= */
+const JUMP_W = 420, JUMP_H = 620;
+const JUMP_SCREEN_Y = JUMP_H*0.62;   // 当前所站的垫子固定画在这个高度，往上跳镜头往上滚
+let jumpRAF = null, jumpChar = null, jumpKeyHandler = null;
+
+function renderJumpGame(target){
+  if(jumpChar === null){ renderJumpCharSelect(target); }
+  else{ renderJumpPlay(target); }
+}
+
+function renderJumpCharSelect(target){
+  const scores = state.jumpScores || {};
+  const ranking = allPeople()
+    .map(p=>({ ...p, score: (scores[p.id]&&scores[p.id].score)||0, charIdx: scores[p.id]&&scores[p.id].charIdx }))
+    .filter(p=>p.score>0)
+    .sort((a,b)=>b.score-a.score);
+  const myBest = (scores[state.identity] && scores[state.identity].score) || 0;
+
+  target.innerHTML = `
+    <button class="back-link" id="backToGamesJump">← 返回娱乐吧</button>
+    <div class="section-head"><h2>🥬 包菜挑战杯</h2></div>
+    <p class="sub" style="margin-bottom:10px;">按住屏幕蓄力，松手起跳，跳到下一个垫子上。跳到正中心有加分，跳空了就直接掉下去，垫子会越来越小、越来越远。</p>
+
+    <div class="bird-select-title">选一个角色</div>
+    <div class="bird-char-grid" id="jumpCharGrid">
+      ${(state.members||[]).map((m,i)=>`
+        <button type="button" class="bird-char" data-idx="${i}">
+          <div class="bird-char-img">${CHARACTER_AVATARS[i]? `<img src="${CHARACTER_AVATARS[i]}">` : (m.name[0]||'')}</div>
+          <div class="bird-char-name">${escapeHtml(m.name)}</div>
+        </button>`).join('')}
+    </div>
+
+    <div class="section-head" style="margin-top:24px;"><h2>🏆 积分排行榜</h2></div>
+    ${myBest? `<div class="banner">你的最高分是 ${myBest} 分${ranking.length&&String(ranking[0].id)===String(state.identity)? '，目前排第一 👑':''}</div>`:''}
+    <div class="bird-rank" id="jumpRank">
+      ${ranking.length? ranking.map((p,i)=>`
+        <div class="bird-rank-row ${String(p.id)===String(state.identity)?'me':''}">
+          <div class="bird-rank-no ${i<3?'top':''}">${['🥇','🥈','🥉'][i] || (i+1)}</div>
+          <div class="bird-rank-avatar">${(p.charIdx!==undefined && CHARACTER_AVATARS[p.charIdx])? `<img src="${CHARACTER_AVATARS[p.charIdx]}">` : (p.name[0]||'')}</div>
+          <div class="bird-rank-name">${escapeHtml(p.name)}</div>
+          <div class="bird-rank-score">${p.score}</div>
+        </div>`).join('') : '<div class="empty-hint">还没有人玩过，来当第一个</div>'}
+    </div>
+  `;
+  document.getElementById('backToGamesJump').onclick = ()=>{ stopJumpLoop(); state.funGame = null; jumpChar = null; renderFunTab(target); };
+  target.querySelectorAll('.bird-char').forEach(b=>{
+    b.onclick = ()=>{ jumpChar = Number(b.dataset.idx); renderJumpGame(target); };
+  });
+}
+
+function renderJumpPlay(target){
+  const charName = (state.members[jumpChar]||{}).name || '玩家';
+  target.innerHTML = `
+    <button class="back-link" id="jumpBack">← 换个角色</button>
+    <div class="bird-stage">
+      <canvas id="jumpCanvas" width="${JUMP_W}" height="${JUMP_H}"></canvas>
+      <div class="jump-power-wrap"><div class="jump-power-fill" id="jumpPowerFill" style="height:0%"></div></div>
+      <div class="bird-overlay" id="jumpOverlay">
+        <div class="bird-overlay-inner">
+          <div class="bird-overlay-title" id="jumpOverlayTitle">${escapeHtml(charName)}，准备好了吗？</div>
+          <div class="bird-overlay-sub" id="jumpOverlaySub">按住蓄力，松手起跳</div>
+        </div>
+      </div>
+    </div>
+  `;
+  document.getElementById('jumpBack').onclick = ()=>{ stopJumpLoop(); jumpChar = null; renderJumpGame(target); };
+
+  const canvas = document.getElementById('jumpCanvas');
+  const ctx = canvas.getContext('2d');
+  const overlay = document.getElementById('jumpOverlay');
+  const powerFill = document.getElementById('jumpPowerFill');
+  const avatarSrc = CHARACTER_AVATARS[jumpChar];
+  let avatarImg = null;
+  if(avatarSrc){ avatarImg = new Image(); avatarImg.src = avatarSrc; }
+
+  const START_R = 46, MIN_R = 24, SHRINK_PER_SCORE = 0.55;
+  const BASE_GAP = 95, GAP_GROW = 2.6, GAP_CAP = 210, GAP_JITTER = 40;
+  const MAX_DX = 130;
+  const CHARGE_MAX_MS = 1300, JUMP_MIN = 40, JUMP_MAX = 300;
+  const JUMP_DUR = 360; // 起跳动画时长(ms)
+  const PLAYER_R = 20;
+  const PALETTE = ['#5C8A6B','#6E85A6','#B18A4A','#8A6EA6','#4C7A5E'];
+
+  let score, best, running, dead, started;
+  let current, next, colorIdx;
+  let camY = 0;
+  let charging = false, chargeStart = 0;
+  let phase = 'idle'; // idle | charging | jumping | falling | dead
+  let jumpFrom=null, jumpTo=null, jumpStartT=0, jumpDist=0;
+  let fallVy = 0, fallX=0, fallY=0, fallDrop=0;
+  let perfectStreak = 0;
+  let lastFrameTs = 0;
+
+  function platformR(sc){ return Math.max(MIN_R, START_R - sc*SHRINK_PER_SCORE); }
+  function genNext(fromPlatform, sc){
+    const gap = BASE_GAP + Math.min(sc*GAP_GROW, GAP_CAP) + Math.random()*GAP_JITTER;
+    let dx = (Math.random()*2-1) * MAX_DX;
+    let nx = fromPlatform.x + dx;
+    const r = platformR(sc+1);
+    nx = Math.max(r+24, Math.min(JUMP_W-r-24, nx));
+    return { x: nx, y: fromPlatform.y - gap, r, color: PALETTE[Math.floor(Math.random()*PALETTE.length)] };
+  }
+
+  function reset(){
+    score = 0; running = true; dead = false; started = false;
+    current = { x: JUMP_W/2, y: 0, r: START_R, color: PALETTE[0] };
+    next = genNext(current, score);
+    camY = 0; charging=false; phase='idle';
+    perfectStreak = 0; lastFrameTs = 0;
+    best = (state.jumpScores && state.jumpScores[state.identity] && state.jumpScores[state.identity].score) || 0;
+  }
+  reset();
+
+  const nowMs = ()=> performance.now();
+  const worldToScreenY = (wy)=> wy - camY + JUMP_SCREEN_Y;
+
+  function startCharge(){
+    if(phase!=='idle') return;
+    if(!started){ started = true; overlay.classList.remove('show'); }
+    charging = true; chargeStart = nowMs(); phase='charging';
+  }
+  function releaseCharge(){
+    if(phase!=='charging') return;
+    charging = false;
+    const held = Math.min(CHARGE_MAX_MS, nowMs()-chargeStart);
+    const power = held / CHARGE_MAX_MS;
+    jumpDist = JUMP_MIN + power*(JUMP_MAX-JUMP_MIN);
+    powerFill.style.height = '0%';
+    const dx = next.x-current.x, dy = next.y-current.y;
+    const D = Math.hypot(dx,dy) || 1;
+    const ux = dx/D, uy = dy/D;
+    jumpFrom = { x: current.x, y: current.y };
+    jumpTo = { x: current.x + ux*jumpDist, y: current.y + uy*jumpDist };
+    jumpStartT = nowMs();
+    phase = 'jumping';
+    // 记下这一跳是否会落在下一个垫子范围内，落地时用
+    jumpFrom._targetDist = D;
+  }
+
+  function landCheck(){
+    const D = jumpFrom._targetDist;
+    const diff = Math.abs(jumpDist - D);
+    const r = next.r;
+    if(diff <= r){
+      const perfect = diff <= r*0.32;
+      score += 1;
+      if(perfect){ perfectStreak++; score += Math.min(perfectStreak,5); }
+      else perfectStreak = 0;
+      current = next;
+      next = genNext(current, score);
+      phase = 'idle';
+    }else{
+      // 掉下去了
+      phase = 'falling';
+      fallX = jumpTo.x; fallY = jumpTo.y; fallVy = 2; fallDrop = 0;
+    }
+  }
+
+  async function gameOver(){
+    dead = true; running = false; phase='dead';
+    const prev = (state.jumpScores[state.identity] && state.jumpScores[state.identity].score) || 0;
+    const isNewBest = score > prev;
+    if(isNewBest){
+      state.jumpScores[state.identity] = { score, charIdx: jumpChar, ts: Date.now() };
+      queueSave();
+    }
+    document.getElementById('jumpOverlayTitle').textContent = isNewBest? `新纪录！${score} 分 🎉` : `${score} 分`;
+    document.getElementById('jumpOverlaySub').textContent = isNewBest? '点一下再来一局' : `你的最高分 ${Math.max(prev,score)} 分 · 点一下再来`;
+    overlay.classList.add('show');
+  }
+
+  function restartIfDead(){
+    if(dead){ reset(); overlay.classList.remove('show'); started = true; }
+  }
+
+  function drawPlatform(p, squish){
+    const sy = worldToScreenY(p.y);
+    if(sy < -60 || sy > JUMP_H+60) return;
+    const r = p.r, h = 14;
+    ctx.fillStyle = 'rgba(34,51,40,.18)';
+    ctx.beginPath(); ctx.ellipse(p.x, sy+h, r, r*0.42, 0, 0, Math.PI*2); ctx.fill();
+    ctx.fillStyle = p.color;
+    ctx.beginPath(); ctx.ellipse(p.x, sy, r, r*(0.62*(squish||1)), 0, 0, Math.PI*2); ctx.fill();
+    ctx.strokeStyle = 'rgba(34,51,40,.25)'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.ellipse(p.x, sy, r*0.28, r*0.18, 0, 0, Math.PI*2); ctx.stroke();
+  }
+
+  function drawPlayer(x, y, squishY, stretch){
+    const r = PLAYER_R;
+    ctx.save();
+    ctx.translate(x, y);
+    ctx.scale(1/(stretch||1), (stretch||1)*(squishY||1));
+    ctx.beginPath(); ctx.arc(0,0,r,0,Math.PI*2); ctx.clip();
+    if(avatarImg && avatarImg.complete && avatarImg.naturalWidth){
+      ctx.drawImage(avatarImg, -r, -r, r*2, r*2);
+    }else{
+      ctx.fillStyle = getPersonColor(jumpChar); ctx.fill();
+    }
+    ctx.restore();
+    ctx.save();
+    ctx.translate(x,y);
+    ctx.scale(1/(stretch||1), (stretch||1)*(squishY||1));
+    ctx.strokeStyle = '#223328'; ctx.lineWidth = 2;
+    ctx.beginPath(); ctx.arc(0,0,r,0,Math.PI*2); ctx.stroke();
+    ctx.restore();
+  }
+
+  function loop(ts){
+    jumpRAF = requestAnimationFrame(loop);
+    if(!lastFrameTs) lastFrameTs = ts || performance.now();
+    const nowTs = ts || performance.now();
+    let dt = (nowTs - lastFrameTs) / (1000/60);
+    lastFrameTs = nowTs;
+    if(dt > 3) dt = 3;
+
+    ctx.fillStyle = '#DCE9F5'; ctx.fillRect(0,0,JUMP_W,JUMP_H);
+
+    // 摄像机跟随当前站立的垫子
+    const camTarget = current.y;
+    camY += (camTarget-camY) * Math.min(1, 0.12*dt);
+
+    if(charging){
+      const held = Math.min(CHARGE_MAX_MS, nowMs()-chargeStart);
+      powerFill.style.height = Math.round(held/CHARGE_MAX_MS*100)+'%';
+    }
+
+    drawPlatform(next, 1);
+    drawPlatform(current, charging? Math.max(0.5, 1-(Math.min(CHARGE_MAX_MS,nowMs()-chargeStart)/CHARGE_MAX_MS)*0.5) : 1);
+
+    if(phase==='jumping'){
+      const t = Math.min(1, (nowMs()-jumpStartT)/JUMP_DUR);
+      const px = jumpFrom.x + (jumpTo.x-jumpFrom.x)*t;
+      const py = jumpFrom.y + (jumpTo.y-jumpFrom.y)*t;
+      const arc = Math.sin(t*Math.PI) * 70;
+      drawPlayer(px, worldToScreenY(py)-arc, 1, 1 - Math.sin(t*Math.PI)*0.15);
+      if(t>=1){ landCheck(); }
+    }else if(phase==='falling'){
+      fallVy += 0.6*dt;
+      fallDrop += fallVy*dt;
+      const sy = worldToScreenY(fallY) + fallDrop;
+      drawPlayer(fallX, sy, 1, 1);
+      if(sy > JUMP_H+60){ gameOver(); }
+    }else{
+      const squishY = charging? Math.max(0.55, 1-(Math.min(CHARGE_MAX_MS,nowMs()-chargeStart)/CHARGE_MAX_MS)*0.45) : 1;
+      drawPlayer(current.x, worldToScreenY(current.y) - (charging? 0: 2), squishY, 1);
+    }
+
+    ctx.fillStyle = '#223328';
+    ctx.font = 'bold 40px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(String(score), JUMP_W/2, 66);
+    if(best>0){
+      ctx.font = '13px sans-serif'; ctx.fillStyle = 'rgba(34,51,40,.55)';
+      ctx.fillText(`最高 ${best}`, JUMP_W/2, 90);
+    }
+    if(perfectStreak>1){
+      ctx.font = 'bold 14px sans-serif'; ctx.fillStyle = 'rgba(226,163,61,.95)';
+      ctx.fillText(`连续正中 ×${perfectStreak}`, JUMP_W/2, JUMP_H-22);
+    }
+  }
+
+  overlay.classList.add('show');
+  canvas.addEventListener('pointerdown', ev=>{ ev.preventDefault(); restartIfDead(); if(!dead) startCharge(); });
+  const jumpPointerUpHandler = ()=>{ releaseCharge(); };
+  window.addEventListener('pointerup', jumpPointerUpHandler);
+  overlay.addEventListener('pointerdown', ev=>{ ev.preventDefault(); restartIfDead(); });
+  jumpKeyHandler = (ev)=>{
+    if(ev.code==='Space'){
+      ev.preventDefault();
+      if(ev.type==='keydown'){ if(!ev.repeat){ restartIfDead(); if(!dead) startCharge(); } }
+    }
+  };
+  const jumpKeyUpHandler = (ev)=>{ if(ev.code==='Space'){ ev.preventDefault(); releaseCharge(); } };
+  window.addEventListener('keydown', jumpKeyHandler);
+  window.addEventListener('keyup', jumpKeyUpHandler);
+  jumpKeyHandler._up = jumpKeyUpHandler;
+  jumpKeyHandler._pointerUp = jumpPointerUpHandler;
+  loop();
+}
+
+function stopJumpLoop(){
+  if(jumpRAF){ cancelAnimationFrame(jumpRAF); jumpRAF = null; }
+  if(jumpKeyHandler){
+    window.removeEventListener('keydown', jumpKeyHandler);
+    if(jumpKeyHandler._up) window.removeEventListener('keyup', jumpKeyHandler._up);
+    if(jumpKeyHandler._pointerUp) window.removeEventListener('pointerup', jumpKeyHandler._pointerUp);
+    jumpKeyHandler = null;
+  }
 }
 
 /* ================= 枪战对决：实时同步的横屏小游戏 ================= */
