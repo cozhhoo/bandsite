@@ -32,9 +32,13 @@ Resources:`;for(let t of c){if(!t||typeof t!=`string`)throw Error(`@supabase/aut
     --bg:#F1F5EB; --card:#FBFAF3; --ink:#223328; --ink-soft:#5A6B5D; --line:#DDE3D2;
     --leaf:#4C7A5E; --leaf-light:#C4D6C6; --amber:#E2A33D; --rest:#D8D2C2; --danger:#B4553F;
     --m1:#4C7A5E; --m2:#7FA88F; --m3:#E2A33D; --m4:#B97A56; --m5:#6E85A6; --m6:#9B7BA6;
-    --radius:14px;
+    --radius:18px;
     --sp-1:8px; --sp-2:16px; --sp-3:24px; --sp-4:40px; --sp-5:64px;
-    --shadow-card:0 1px 3px rgba(34,51,40,0.05);
+    /* 用柔和的多层阴影代替硬边框来做层次，画面会松弛很多 */
+    --shadow-card:0 1px 2px rgba(34,51,40,.04), 0 4px 14px rgba(34,51,40,.05);
+    --shadow-hover:0 4px 10px rgba(34,51,40,.06), 0 12px 32px rgba(34,51,40,.09);
+    --shadow-float:0 8px 20px rgba(34,51,40,.08), 0 24px 60px rgba(34,51,40,.12);
+    --ease:cubic-bezier(.22,.9,.28,1);
   }
   *{box-sizing:border-box;}
   body{margin:0;background:var(--bg);background-image:radial-gradient(circle at 1px 1px, rgba(76,122,94,0.08) 1px, transparent 0);background-size:22px 22px;color:var(--ink);font-family:'Noto Sans SC',sans-serif;-webkit-font-smoothing:antialiased;}
