@@ -3452,10 +3452,6 @@ function renderJumpPlay(target){
     overlay.classList.add('show');
   }
 
-  function restartIfDead(){
-    if(dead){ reset(); overlay.classList.remove('show'); started = true; }
-  }
-
   function drawPlatform(p, squish){
     const sy = worldToScreenY(p.y);
     if(sy < -60 || sy > JUMP_H+60) return;
@@ -3542,14 +3538,26 @@ function renderJumpPlay(target){
   }
 
   overlay.classList.add('show');
-  canvas.addEventListener('pointerdown', ev=>{ ev.preventDefault(); restartIfDead(); if(!dead) startCharge(); });
+  // 覆盖层上的一下点击只负责“开始/重开”，不能和下面画布上的长按蓄力混在一起，
+  // 不然手机上第一下点击会同时触发蓄力，覆盖层来不及消失，等于点了没反应。
+  function beginPlay(){
+    if(dead){ reset(); overlay.classList.remove('show'); started = true; }
+    else if(!started){ started = true; overlay.classList.remove('show'); }
+  }
+  overlay.addEventListener('pointerdown', ev=>{ ev.preventDefault(); beginPlay(); });
+  canvas.addEventListener('pointerdown', ev=>{
+    ev.preventDefault();
+    if(dead || !started){ beginPlay(); return; }
+    startCharge();
+  });
   const jumpPointerUpHandler = ()=>{ releaseCharge(); };
   window.addEventListener('pointerup', jumpPointerUpHandler);
-  overlay.addEventListener('pointerdown', ev=>{ ev.preventDefault(); restartIfDead(); });
   jumpKeyHandler = (ev)=>{
     if(ev.code==='Space'){
       ev.preventDefault();
-      if(ev.type==='keydown'){ if(!ev.repeat){ restartIfDead(); if(!dead) startCharge(); } }
+      if(ev.type==='keydown' && !ev.repeat){
+        if(dead || !started) beginPlay(); else startCharge();
+      }
     }
   };
   const jumpKeyUpHandler = (ev)=>{ if(ev.code==='Space'){ ev.preventDefault(); releaseCharge(); } };
