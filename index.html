@@ -447,6 +447,9 @@ Resources:`;for(let t of c){if(!t||typeof t!=`string`)throw Error(`@supabase/aut
   .bird-overlay-inner{background:var(--card);border-radius:14px;padding:22px 28px;text-align:center;}
   .bird-overlay-title{font-family:'Noto Serif SC',serif;font-weight:700;font-size:19px;}
   .bird-overlay-sub{font-size:13px;color:var(--ink-soft);margin-top:6px;}
+  .run-controls{display:flex;justify-content:center;gap:8px;margin-top:10px;}
+  .run-btn{flex:1;max-width:110px;padding:10px 0;border-radius:12px;border:1px solid var(--line);background:var(--card);font-size:13px;font-weight:700;text-align:center;user-select:none;}
+  .run-btn:active{background:var(--leaf-light);}
 
   /* ---- 枪战对决 ---- */
   .sh-rotate-hint{display:none;align-items:center;justify-content:center;height:280px;font-size:18px;color:var(--ink-soft);text-align:center;background:var(--card);border-radius:14px;border:1px dashed var(--line);}
@@ -817,6 +820,7 @@ let state = {
   stackScores: {},        // 皮鼓爹跌叠：每个人的最高层数 { personId: {score, ts} }
   reactScores: {},        // 康神开剥了：每个人的最快反应（毫秒，越小越好）{ personId: {ms, ts} }
   mergeScores: {},        // 皮菇2048：每个人的最高分 { personId: {score, maxTier, ts} }
+  runScores: {},          // 巡演大逃亡：每个人的最高分 { personId: {score, charIdx, ts} }
   funGame: null,          // 娱乐吧当前打开的小游戏：null | 'undercover' | 'shooter'
   undercoverGame: null,   // 谁是卧底：共享的当前对局数据（见 getUndercoverGame）
   shooterGame: null,      // 实时对战：共享的当前对局数据（见 getShooterGame）
@@ -1086,6 +1090,7 @@ function applyRemoteData(data){
   state.stackScores = data.stackScores || {};
   state.reactScores = data.reactScores || {};
   state.mergeScores = data.mergeScores || {};
+  state.runScores = data.runScores || {};
 }
 
 function startRealtimeSync(){
@@ -1134,7 +1139,7 @@ async function loadAll(){
     return;
   }
   if(!data){
-    data = { members: PRESET_MEMBERS, checkins: {}, meetings: [], posts: [], profiles: {}, guests: [], credentials: {}, messages: [], boards: {}, bandBanner: null, notifications: [], announcement: '', nameProposals: [], freezeTokens: {}, frozenDays: {}, freezeAwardMark: {}, teambuilds: [], dayMemories: {}, undercoverGame: null, shooterGame: null, praises: [], ledger: [], gigs: [], songs: DEFAULT_SONGS, roles: DEFAULT_ROLES, gear: [], birdScores: {}, stackScores: {}, reactScores: {}, mergeScores: {} };
+    data = { members: PRESET_MEMBERS, checkins: {}, meetings: [], posts: [], profiles: {}, guests: [], credentials: {}, messages: [], boards: {}, bandBanner: null, notifications: [], announcement: '', nameProposals: [], freezeTokens: {}, frozenDays: {}, freezeAwardMark: {}, teambuilds: [], dayMemories: {}, undercoverGame: null, shooterGame: null, praises: [], ledger: [], gigs: [], songs: DEFAULT_SONGS, roles: DEFAULT_ROLES, gear: [], birdScores: {}, stackScores: {}, reactScores: {}, mergeScores: {}, runScores: {} };
     try{ await remoteSet(data); }
     catch(e2){
       renderErrorScreen('初始化云端数据失败：' + e2.message);
@@ -1171,6 +1176,7 @@ async function loadAll(){
   state.stackScores = data.stackScores || {};
   state.reactScores = data.reactScores || {};
   state.mergeScores = data.mergeScores || {};
+  state.runScores = data.runScores || {};
   state.identity = loadIdentity();
   startRealtimeSync();
   renderRoot();
@@ -1210,6 +1216,7 @@ async function pullLatest(){
       state.stackScores = data.stackScores || {};
       state.reactScores = data.reactScores || {};
       state.mergeScores = data.mergeScores || {};
+      state.runScores = data.runScores || {};
     }
   }catch(e){ /* 拉取失败就先用本地已有数据 */ }
 }
@@ -1255,7 +1262,8 @@ async function saveAll(){
       birdScores: state.birdScores,
       stackScores: state.stackScores,
       reactScores: state.reactScores,
-      mergeScores: state.mergeScores
+      mergeScores: state.mergeScores,
+      runScores: state.runScores
     }), 15000, '保存');
   }catch(e){
     console.error('保存失败', e);
@@ -1896,6 +1904,7 @@ function renderFunTab(target){
   if(state.funGame === 'stack'){ renderStackGame(target); return; }
   if(state.funGame === 'react'){ renderReactGame(target); return; }
   if(state.funGame === 'merge'){ renderMergeGame(target); return; }
+  if(state.funGame === 'run'){ renderRunGame(target); return; }
   target.innerHTML = `
     <div class="section-head"><h2>🎮 娱乐吧</h2></div>
     <p class="sub" style="margin-bottom:14px;">团建、团综的时候一起玩，以后会陆续加更多小游戏。</p>
@@ -1930,6 +1939,11 @@ function renderFunTab(target){
         <div class="game-name">皮菇2048</div>
         <div class="game-desc">滑动合并，从小鱼一路合到杉菜</div>
       </div>
+      <div class="game-card" id="gameRun">
+        <div class="game-icon">🏃</div>
+        <div class="game-name">巡演大逃亡</div>
+        <div class="game-desc">切车道、跳跃、下滑，躲开一路障碍</div>
+      </div>
     </div>
   `;
   document.getElementById('gameUndercover').onclick = ()=>{ state.funGame = 'undercover'; renderFunTab(target); };
@@ -1938,6 +1952,7 @@ function renderFunTab(target){
   document.getElementById('gameStack').onclick = ()=>{ state.funGame = 'stack'; renderFunTab(target); };
   document.getElementById('gameReact').onclick = ()=>{ state.funGame = 'react'; renderFunTab(target); };
   document.getElementById('gameMerge').onclick = ()=>{ state.funGame = 'merge'; renderFunTab(target); };
+  document.getElementById('gameRun').onclick = ()=>{ state.funGame = 'run'; renderFunTab(target); };
 }
 
 function getUndercoverGame(){
@@ -2935,6 +2950,319 @@ function renderBirdPlay(target){
 function stopBirdLoop(){
   if(birdRAF){ cancelAnimationFrame(birdRAF); birdRAF = null; }
   if(birdKeyHandler){ window.removeEventListener('keydown', birdKeyHandler); birdKeyHandler = null; }
+}
+
+/* ================= 巡演大逃亡：三车道躲障碍跑酷 ================= */
+const RUN_W = 420, RUN_H = 620;
+const RUN_GROUND = RUN_H - 52;         // 地面线，和鸟游戏的地面高度保持一致
+const RUN_LANE_X = [RUN_W*0.22, RUN_W*0.5, RUN_W*0.78];
+let runRAF = null, runChar = null, runKeyHandler = null;
+
+function renderRunGame(target){
+  if(runChar === null){ renderRunCharSelect(target); }
+  else{ renderRunPlay(target); }
+}
+
+/* ---- 选角色 + 排行榜 ---- */
+function renderRunCharSelect(target){
+  const scores = state.runScores || {};
+  const ranking = allPeople()
+    .map(p=>({ ...p, score: (scores[p.id]&&scores[p.id].score)||0, charIdx: scores[p.id]&&scores[p.id].charIdx }))
+    .filter(p=>p.score>0)
+    .sort((a,b)=>b.score-a.score);
+  const myBest = (scores[state.identity] && scores[state.identity].score) || 0;
+
+  target.innerHTML = `
+    <button class="back-link" id="backToGamesRun">← 返回娱乐吧</button>
+    <div class="section-head"><h2>🏃 巡演大逃亡</h2></div>
+    <p class="sub" style="margin-bottom:10px;">左右滑动切车道躲开路障，上滑跳过矮障碍，下滑滑过横杆，跑得越远分越高，且越到后面速度越快。</p>
+
+    <div class="bird-select-title">选一个角色</div>
+    <div class="bird-char-grid" id="runCharGrid">
+      ${(state.members||[]).map((m,i)=>`
+        <button type="button" class="bird-char" data-idx="${i}">
+          <div class="bird-char-img">${CHARACTER_AVATARS[i]? `<img src="${CHARACTER_AVATARS[i]}">` : (m.name[0]||'')}</div>
+          <div class="bird-char-name">${escapeHtml(m.name)}</div>
+        </button>`).join('')}
+    </div>
+
+    <div class="section-head" style="margin-top:24px;"><h2>🏆 积分排行榜</h2></div>
+    ${myBest? `<div class="banner">你的最高分是 ${myBest} 分${ranking.length&&String(ranking[0].id)===String(state.identity)? '，目前排第一 👑':''}</div>`:''}
+    <div class="bird-rank" id="runRank">
+      ${ranking.length? ranking.map((p,i)=>`
+        <div class="bird-rank-row ${String(p.id)===String(state.identity)?'me':''}">
+          <div class="bird-rank-no ${i<3?'top':''}">${['🥇','🥈','🥉'][i] || (i+1)}</div>
+          <div class="bird-rank-avatar">${(p.charIdx!==undefined && CHARACTER_AVATARS[p.charIdx])? `<img src="${CHARACTER_AVATARS[p.charIdx]}">` : (p.name[0]||'')}</div>
+          <div class="bird-rank-name">${escapeHtml(p.name)}</div>
+          <div class="bird-rank-score">${p.score}</div>
+        </div>`).join('') : '<div class="empty-hint">还没有人玩过，来当第一个</div>'}
+    </div>
+  `;
+  document.getElementById('backToGamesRun').onclick = ()=>{ stopRunLoop(); state.funGame = null; runChar = null; renderFunTab(target); };
+  target.querySelectorAll('.bird-char').forEach(b=>{
+    b.onclick = ()=>{ runChar = Number(b.dataset.idx); renderRunGame(target); };
+  });
+}
+
+/* ---- 游戏本体 ---- */
+function renderRunPlay(target){
+  const charName = (state.members[runChar]||{}).name || '玩家';
+  target.innerHTML = `
+    <button class="back-link" id="runBack">← 换个角色</button>
+    <div class="bird-stage">
+      <canvas id="runCanvas" width="${RUN_W}" height="${RUN_H}"></canvas>
+      <div class="bird-overlay" id="runOverlay">
+        <div class="bird-overlay-inner">
+          <div class="bird-overlay-title" id="runOverlayTitle">${escapeHtml(charName)}，准备好了吗？</div>
+          <div class="bird-overlay-sub" id="runOverlaySub">点一下开始，滑动屏幕躲开障碍</div>
+        </div>
+      </div>
+    </div>
+    <div class="run-controls">
+      <div class="run-btn" id="runLeftBtn">◀ 左</div>
+      <div class="run-btn" id="runJumpBtn">▲ 跳</div>
+      <div class="run-btn" id="runSlideBtn">▼ 滑</div>
+      <div class="run-btn" id="runRightBtn">右 ▶</div>
+    </div>
+  `;
+  document.getElementById('runBack').onclick = ()=>{ stopRunLoop(); runChar = null; renderRunGame(target); };
+
+  const canvas = document.getElementById('runCanvas');
+  const ctx = canvas.getContext('2d');
+  const overlay = document.getElementById('runOverlay');
+  const avatarSrc = CHARACTER_AVATARS[runChar];
+  let avatarImg = null;
+  if(avatarSrc){ avatarImg = new Image(); avatarImg.src = avatarSrc; }
+
+  const GRAV = 0.55, JUMP_V = -11.5, SLIDE_MS = 480, BASE_SPEED = 4.2, PLAYER_R = 22;
+  const OBS_H = 26, LANE_SWITCH = 0.28;
+  const TYPES = ['block','block','block','low','high'];
+  let player, obstacles, coins, score, best, running, dead, started;
+  let spawnTimer = 0, coinTimer = 0, phase = 0, lastFrameTs = 0;
+
+  function reset(){
+    player = { lane:1, x: RUN_LANE_X[1], vy:0, jumpY:0, jumping:false, sliding:false, slideUntil:0 };
+    obstacles = []; coins = [];
+    score = 0; running = false; dead = false; started = false;
+    spawnTimer = 0; coinTimer = 0; phase = 0; lastFrameTs = 0;
+    best = (state.runScores && state.runScores[state.identity] && state.runScores[state.identity].score) || 0;
+  }
+  reset();
+
+  const nowMs = ()=> performance.now();
+  const curSpeed = ()=> BASE_SPEED + Math.min(score*0.08, 4.5);
+
+  function spawnObstacle(){
+    const type = TYPES[Math.floor(Math.random()*TYPES.length)];
+    if(type==='block'){
+      obstacles.push({ type, lane: Math.floor(Math.random()*3), y:-OBS_H, checked:false });
+    }else{
+      obstacles.push({ type, y:-OBS_H, checked:false });
+    }
+  }
+  function spawnCoin(){
+    if(obstacles.some(o=> o.y > -120 && o.y < 40)) return; // 障碍物刚出现时别叠金币，容易看不清
+    coins.push({ lane: Math.floor(Math.random()*3), y:-40, taken:false });
+  }
+
+  function setLane(delta){
+    if(dead || !started) return;
+    player.lane = Math.max(0, Math.min(2, player.lane + delta));
+  }
+  function doJump(){
+    if(dead || player.jumping || player.sliding) return;
+    player.jumping = true; player.vy = JUMP_V;
+  }
+  function doSlide(){
+    if(dead || player.jumping || player.sliding) return;
+    player.sliding = true; player.slideUntil = nowMs() + SLIDE_MS;
+  }
+  function start(){
+    if(dead){ reset(); overlay.classList.remove('show'); running = true; started = true; return; }
+    if(!started){ started = true; running = true; overlay.classList.remove('show'); }
+  }
+
+  async function gameOver(){
+    dead = true; running = false;
+    const prev = (state.runScores[state.identity] && state.runScores[state.identity].score) || 0;
+    const isNewBest = score > prev;
+    if(isNewBest){
+      state.runScores[state.identity] = { score, charIdx: runChar, ts: Date.now() };
+      queueSave();
+    }
+    document.getElementById('runOverlayTitle').textContent = isNewBest? `新纪录！${score} 分 🎉` : `${score} 分`;
+    document.getElementById('runOverlaySub').textContent = isNewBest? '点一下再来一局' : `你的最高分 ${Math.max(prev,score)} 分 · 点一下再来`;
+    overlay.classList.add('show');
+  }
+
+  function drawRunner(cx, groundY, jumpOffset, mode, phaseVal){
+    const r = PLAYER_R;
+    const hipY = groundY - r*1.7 - jumpOffset, shoulderY = hipY - r*1.3;
+    const headR = r*0.62;
+    ctx.save();
+    ctx.strokeStyle = '#223328'; ctx.lineWidth = Math.max(3, r*0.2); ctx.lineCap = 'round';
+    let headX = cx, headY;
+    if(mode==='slide'){
+      const bodyY = groundY - r*0.95;
+      ctx.beginPath(); ctx.moveTo(cx,bodyY); ctx.lineTo(cx+r*1.5,bodyY+r*0.2); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cx,bodyY); ctx.lineTo(cx+r*1.0,bodyY+r*0.45); ctx.stroke();
+      const topX = cx-r*0.9, topY = bodyY-r*0.85;
+      ctx.beginPath(); ctx.moveTo(cx,bodyY); ctx.lineTo(topX,topY); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(topX,topY); ctx.lineTo(topX-r*0.6,topY+r*0.3); ctx.stroke();
+      headX = topX; headY = topY - headR*0.5;
+    }else if(mode==='jump'){
+      const bodyY = hipY;
+      ctx.beginPath(); ctx.moveTo(cx,bodyY); ctx.lineTo(cx-r*0.55,bodyY+r*0.9); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cx,bodyY); ctx.lineTo(cx+r*0.55,bodyY+r*0.9); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cx,bodyY); ctx.lineTo(cx,shoulderY); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cx,shoulderY); ctx.lineTo(cx-r*0.85,shoulderY-r*0.5); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cx,shoulderY); ctx.lineTo(cx+r*0.85,shoulderY-r*0.5); ctx.stroke();
+      headX = cx; headY = shoulderY - headR*0.8;
+    }else{
+      const swing = Math.sin(phaseVal);
+      ctx.beginPath(); ctx.moveTo(cx,hipY); ctx.lineTo(cx+swing*r*0.75, groundY-jumpOffset); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cx,hipY); ctx.lineTo(cx-swing*r*0.75, groundY-jumpOffset); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cx,hipY); ctx.lineTo(cx,shoulderY); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cx,shoulderY); ctx.lineTo(cx-swing*r*0.6,shoulderY+r*0.55); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cx,shoulderY); ctx.lineTo(cx+swing*r*0.6,shoulderY+r*0.55); ctx.stroke();
+      headX = cx; headY = shoulderY - headR*0.8;
+    }
+    ctx.save();
+    ctx.beginPath(); ctx.arc(headX,headY,headR,0,Math.PI*2); ctx.clip();
+    if(avatarImg && avatarImg.complete && avatarImg.naturalWidth){
+      ctx.drawImage(avatarImg, headX-headR, headY-headR, headR*2, headR*2);
+    }else{
+      ctx.fillStyle = getPersonColor(runChar); ctx.fill();
+    }
+    ctx.restore();
+    ctx.lineWidth = 2; ctx.beginPath(); ctx.arc(headX,headY,headR,0,Math.PI*2); ctx.stroke();
+    ctx.restore();
+  }
+
+  function loop(ts){
+    runRAF = requestAnimationFrame(loop);
+    if(!lastFrameTs) lastFrameTs = ts || performance.now();
+    const nowTs = ts || performance.now();
+    let dt = (nowTs - lastFrameTs) / (1000/60);
+    lastFrameTs = nowTs;
+    if(dt > 3) dt = 3;
+
+    ctx.fillStyle = '#DCE9F5'; ctx.fillRect(0,0,RUN_W,RUN_H);
+    ctx.fillStyle = '#C4D6C6'; ctx.fillRect(0,RUN_GROUND,RUN_W,RUN_H-RUN_GROUND);
+    // 车道线
+    ctx.strokeStyle = 'rgba(34,51,40,.12)'; ctx.lineWidth = 2;
+    [0.365,0.635].forEach(f=>{ ctx.beginPath(); ctx.moveTo(RUN_W*f,0); ctx.lineTo(RUN_W*f,RUN_GROUND); ctx.stroke(); });
+
+    if(running){
+      const speed = curSpeed() * dt;
+      // 车道横向平滑移动
+      const targetX = RUN_LANE_X[player.lane];
+      player.x += (targetX - player.x) * Math.min(1, LANE_SWITCH*dt);
+      // 跳跃物理
+      if(player.jumping){
+        player.vy += GRAV*dt; player.jumpY -= player.vy*dt;
+        if(player.jumpY <= 0){ player.jumpY = 0; player.jumping = false; player.vy = 0; }
+      }
+      if(player.sliding && nowMs() > player.slideUntil) player.sliding = false;
+      phase += 0.22*dt*(curSpeed()/BASE_SPEED);
+
+      spawnTimer += dt;
+      if(spawnTimer >= 78){ spawnTimer -= 78; spawnObstacle(); }
+      coinTimer += dt;
+      if(coinTimer >= 46){ coinTimer -= 46; if(Math.random()<0.55) spawnCoin(); }
+
+      const hitTop = RUN_GROUND - 78, hitBot = RUN_GROUND;
+      obstacles.forEach(o=>{ o.y += speed; });
+      coins.forEach(c=>{ c.y += speed; });
+      obstacles = obstacles.filter(o=> o.y < RUN_H+40);
+      coins = coins.filter(c=> !c.taken && c.y < RUN_H+40);
+
+      coins.forEach(c=>{
+        if(c.taken) return;
+        if(c.y+15 > hitTop && c.y-15 < hitBot && c.lane===player.lane){ c.taken = true; score += 3; }
+      });
+
+      obstacles.forEach(o=>{
+        if(o.checked) return;
+        if(o.y + OBS_H < hitTop) return;
+        if(o.y > hitBot) return;
+        o.checked = true;
+        let safe = false;
+        if(o.type==='block') safe = o.lane !== player.lane;
+        else if(o.type==='low') safe = player.jumping && player.jumpY > 34;
+        else if(o.type==='high') safe = player.sliding;
+        if(safe) score += 1; else gameOver();
+      });
+    }
+
+    // 障碍物
+    obstacles.forEach(o=>{
+      ctx.fillStyle = '#B15C4A';
+      if(o.type==='block'){
+        ctx.fillRect(RUN_LANE_X[o.lane]-26, o.y, 52, OBS_H);
+      }else if(o.type==='low'){
+        ctx.fillRect(14, o.y, RUN_W-28, OBS_H*0.7);
+      }else if(o.type==='high'){
+        ctx.fillStyle = '#6E85A6';
+        ctx.fillRect(14, o.y, RUN_W-28, OBS_H*0.55);
+      }
+    });
+    // 金币
+    coins.forEach(c=>{
+      if(c.taken) return;
+      ctx.save();
+      ctx.beginPath(); ctx.arc(RUN_LANE_X[c.lane], c.y, 11, 0, Math.PI*2);
+      ctx.fillStyle = '#E2A33D'; ctx.fill();
+      ctx.strokeStyle = '#B9822A'; ctx.lineWidth = 2; ctx.stroke();
+      ctx.restore();
+    });
+
+    // 角色
+    const mode = player.jumping? 'jump' : (player.sliding? 'slide' : 'run');
+    drawRunner(player.x, RUN_GROUND, player.jumpY, mode, phase);
+
+    // 分数
+    ctx.fillStyle = '#223328';
+    ctx.font = 'bold 40px sans-serif'; ctx.textAlign = 'center';
+    ctx.fillText(String(score), RUN_W/2, 66);
+    if(best>0){
+      ctx.font = '13px sans-serif'; ctx.fillStyle = 'rgba(34,51,40,.55)';
+      ctx.fillText(`最高 ${best}`, RUN_W/2, 90);
+    }
+  }
+
+  overlay.classList.add('show');
+  let touchStartX=0, touchStartY=0, touchStartT=0;
+  canvas.addEventListener('pointerdown', ev=>{
+    ev.preventDefault();
+    touchStartX = ev.clientX; touchStartY = ev.clientY; touchStartT = nowMs();
+    start();
+  });
+  canvas.addEventListener('pointerup', ev=>{
+    ev.preventDefault();
+    const dx = ev.clientX-touchStartX, dy = ev.clientY-touchStartY;
+    if(Math.abs(dx) < 24 && Math.abs(dy) < 24){ doJump(); return; } // 轻点 = 跳
+    if(Math.abs(dx) > Math.abs(dy)){ setLane(dx<0? -1: 1); }
+    else{ if(dy<0) doJump(); else doSlide(); }
+  });
+  overlay.addEventListener('pointerdown', ev=>{ ev.preventDefault(); start(); });
+  document.getElementById('runLeftBtn').onclick = ()=>{ start(); setLane(-1); };
+  document.getElementById('runRightBtn').onclick = ()=>{ start(); setLane(1); };
+  document.getElementById('runJumpBtn').onclick = ()=>{ start(); doJump(); };
+  document.getElementById('runSlideBtn').onclick = ()=>{ start(); doSlide(); };
+  runKeyHandler = (ev)=>{
+    if(ev.code==='ArrowLeft'){ ev.preventDefault(); start(); setLane(-1); }
+    else if(ev.code==='ArrowRight'){ ev.preventDefault(); start(); setLane(1); }
+    else if(ev.code==='ArrowUp' || ev.code==='Space'){ ev.preventDefault(); start(); doJump(); }
+    else if(ev.code==='ArrowDown'){ ev.preventDefault(); start(); doSlide(); }
+  };
+  window.addEventListener('keydown', runKeyHandler);
+  loop();
+}
+
+function stopRunLoop(){
+  if(runRAF){ cancelAnimationFrame(runRAF); runRAF = null; }
+  if(runKeyHandler){ window.removeEventListener('keydown', runKeyHandler); runKeyHandler = null; }
 }
 
 /* ================= 枪战对决：实时同步的横屏小游戏 ================= */
