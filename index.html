@@ -2804,7 +2804,8 @@ function renderBirdPlay(target){
     if(running){
       frame++;
       bird.vy += GRAV * dt; bird.y += bird.vy * dt;
-      const curSpeed = (hasDash() ? SPEED*2.4 : SPEED) * dt;   // 加速丸：整体推进变快
+      const baseSpeed = SPEED + Math.min(score * 0.05, 3.5);   // 分数越高飞得越快，封顶避免变态难
+      const curSpeed = (hasDash() ? baseSpeed*2.4 : baseSpeed) * dt;   // 加速丸：整体推进变快
       pipeTimer += dt;
       if(pipeTimer >= 92){ pipeTimer -= 92; spawnPipe(); }
       pipes.forEach(p=>{ p.x -= curSpeed; });
